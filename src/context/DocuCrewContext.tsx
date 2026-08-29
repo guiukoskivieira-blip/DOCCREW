@@ -20,6 +20,7 @@ import {
   INITIAL_DOCUMENT_TYPES,
   INITIAL_SYSTEM_USERS,
 } from '../data/mockData';
+import { evaluateWorkerCompliance } from '../domain/workerCompliance';
 
 export interface ToastMessage {
   id: string;
@@ -90,40 +91,20 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
   // Helper to re-evaluate worker status based on current documents
   const recalculateWorkerState = (workerId: string, currentDocs: WorkerDocument[]) => {
     const workerDocs = currentDocs.filter((d) => d.workerId === workerId);
-    const hasExpired = workerDocs.some((d) => d.status === 'VENCIDO');
-    const hasPending = workerDocs.some((d) => d.status === 'PENDENTE');
-    const hasRejected = workerDocs.some((d) => d.status === 'RECUSADO');
-
-    let blockReason: string | undefined = undefined;
-    if (hasExpired) {
-      const expDoc = workerDocs.find((d) => d.status === 'VENCIDO');
-      blockReason = `${expDoc?.documentTypeName || 'Documento'} vencido.`;
-    } else if (hasRejected) {
-      const rejDoc = workerDocs.find((d) => d.status === 'RECUSADO');
-      blockReason = `${rejDoc?.documentTypeName || 'Documento'} recusado: ${rejDoc?.rejectionReason || 'Não atende requisitos'}`;
-    } else if (hasPending) {
-      const penDoc = workerDocs.find((d) => d.status === 'PENDENTE');
-      blockReason = `${penDoc?.documentTypeName || 'Documento obrigatório'} pendente de envio.`;
-    }
-
-    const isBlocked = hasExpired || hasPending || hasRejected;
 
     setWorkers((prevWorkers) =>
       prevWorkers.map((w) => {
         if (w.id === workerId) {
-          const underReview = workerDocs.filter((d) => d.status === 'AGUARDANDO_ANALISE').length;
-          const approved = workerDocs.filter((d) => d.status === 'APROVADO' || d.status === 'PROXIMO_VENCIMENTO').length;
-          const pending = workerDocs.filter((d) => d.status === 'PENDENTE').length;
-          const expired = workerDocs.filter((d) => d.status === 'VENCIDO').length;
+          const compliance = evaluateWorkerCompliance(workerDocs, w.totalRequiredDocuments);
 
           return {
             ...w,
-            status: isBlocked ? 'BLOQUEADO' : 'LIBERADO',
-            blockReason: isBlocked ? blockReason : undefined,
-            underReviewDocumentsCount: underReview,
-            approvedDocumentsCount: approved,
-            pendingDocumentsCount: pending,
-            expiredDocumentsCount: expired,
+            status: compliance.status,
+            blockReason: compliance.blockReason,
+            underReviewDocumentsCount: compliance.underReviewDocumentsCount,
+            approvedDocumentsCount: compliance.approvedDocumentsCount,
+            pendingDocumentsCount: compliance.pendingDocumentsCount,
+            expiredDocumentsCount: compliance.expiredDocumentsCount,
           };
         }
         return w;
