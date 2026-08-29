@@ -1,0 +1,6 @@
+{
+  "name": "DocuCrew - Gestão de Terceirizados",
+  "description": "Controle de documentos, treinamentos e conformidade de trabalhadores terceirizados em obras e contratos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
