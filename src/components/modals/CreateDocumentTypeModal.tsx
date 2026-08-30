@@ -15,7 +15,7 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
   onClose,
   initialData,
 }) => {
-  const { addDocumentType, editDocumentType, worksites, contractors } = useDocuCrew();
+  const { addDocumentType, editDocumentType, worksites, contractors, workerRoles } = useDocuCrew();
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState<'SEGURANCA' | 'SAUDE' | 'CLT' | 'QUALIFICACAO' | 'CORPORATIVO'>('SEGURANCA');
@@ -26,7 +26,7 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
   const [isMandatory, setIsMandatory] = useState(true);
   const [isActive, setIsActive] = useState(true);
   const [requirementScope, setRequirementScope] = useState<'ORGANIZATION' | 'ROLE' | 'CONTRACTOR' | 'SITE'>('ORGANIZATION');
-  const [roleName, setRoleName] = useState('');
+  const [roleId, setRoleId] = useState('');
   const [contractorId, setContractorId] = useState('');
   const [siteId, setSiteId] = useState('');
 
@@ -46,7 +46,7 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
       setRequirementScope(initialData.scope || 'ORGANIZATION');
       setContractorId(initialData.targetContractorId || '');
       setSiteId(initialData.targetSiteId || '');
-      setRoleName(initialData.targetRole || '');
+      setRoleId(initialData.targetRole || '');
     } else {
       setName('');
       setCategory('SEGURANCA');
@@ -59,9 +59,9 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
       setRequirementScope('ORGANIZATION');
       setContractorId('');
       setSiteId('');
-      setRoleName('');
+      setRoleId(workerRoles[0]?.id || '');
     }
-  }, [initialData, isOpen]);
+  }, [initialData, isOpen, workerRoles]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +85,8 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
         isMandatory,
         isActive,
         requirementScope,
-        roleId: requirementScope === 'ROLE' ? roleName : undefined,
+        roleId: requirementScope === 'ROLE' ? roleId : undefined,
+        workerRoleId: requirementScope === 'ROLE' ? roleId : undefined,
         contractorId: requirementScope === 'CONTRACTOR' ? contractorId : undefined,
         siteId: requirementScope === 'SITE' ? siteId : undefined,
       });
@@ -106,7 +107,8 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
         isMandatory,
         isActive,
         requirementScope,
-        roleId: requirementScope === 'ROLE' ? roleName : undefined,
+        roleId: requirementScope === 'ROLE' ? roleId : undefined,
+        workerRoleId: requirementScope === 'ROLE' ? roleId : undefined,
         contractorId: requirementScope === 'CONTRACTOR' ? contractorId : undefined,
         siteId: requirementScope === 'SITE' ? siteId : undefined,
       });
@@ -204,14 +206,19 @@ export const CreateDocumentTypeModal: React.FC<CreateDocumentTypeModalProps> = (
 
           {requirementScope === 'ROLE' && (
             <div className="sm:col-span-2">
-              <label className="block font-bold text-slate-800 mb-1">Nome da Função Exigida</label>
-              <input
-                type="text"
-                placeholder="Ex: Soldador, Eletricista, Operador de Munck"
-                value={roleName}
-                onChange={(e) => setRoleName(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              />
+              <label className="block font-bold text-slate-800 mb-1">Função / Cargo Exigido</label>
+              <select
+                value={roleId}
+                onChange={(e) => setRoleId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none font-semibold"
+              >
+                <option value="">Selecione a função...</option>
+                {workerRoles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} ({r.code})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

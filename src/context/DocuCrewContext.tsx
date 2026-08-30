@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   Contractor,
+  ContractorStatus,
   WorkSite,
   Worker,
   WorkerDocument,
@@ -16,6 +17,7 @@ import {
   NotificationHistoryLog,
   SystemUser,
   DocumentStatus,
+  WorkerRole,
 } from '../types';
 import {
   INITIAL_CONTRACTORS,
@@ -26,6 +28,7 @@ import {
   INITIAL_NOTIFICATION_LOGS,
   INITIAL_DOCUMENT_TYPES,
   INITIAL_SYSTEM_USERS,
+  INITIAL_WORKER_ROLES,
 } from '../data/mockData';
 import { evaluateWorkerCompliance } from '../domain/workerCompliance';
 import { useAuth } from './AuthContext';
@@ -73,6 +76,7 @@ interface DocuCrewContextType {
   alerts: AlertNotification[];
   notificationLogs: NotificationHistoryLog[];
   documentTypes: DocumentTypeDefinition[];
+  workerRoles: WorkerRole[];
   users: SystemUser[];
 
   // Organization & Supabase State
@@ -106,9 +110,9 @@ interface DocuCrewContextType {
   markAlertAsRead: (alertId: string) => void;
   markAllAlertsAsRead: () => void;
 
-  // New Mutation Actions
+  // Mutation Actions
   addContractor: (payload: CreateContractorPayload) => Promise<{ success: boolean; error?: string }>;
-  addWorker: (payload: CreateWorkerPayload) => Promise<{ success: boolean; error?: string }>;
+  addWorker: (payload: CreateWorkerPayload) => Promise<{ success: boolean; workerCreated?: boolean; error?: string }>;
   addSite: (payload: CreateSitePayload) => Promise<{ success: boolean; error?: string }>;
   addDocumentType: (payload: CreateDocumentTypePayload) => Promise<{ success: boolean; error?: string }>;
   editDocumentType: (docTypeId: string, payload: Partial<CreateDocumentTypePayload>) => Promise<{ success: boolean; error?: string }>;
@@ -133,6 +137,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>(
     INITIAL_DOCUMENT_TYPES
   );
+  const [workerRoles, setWorkerRoles] = useState<WorkerRole[]>(INITIAL_WORKER_ROLES);
   const [users] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
 
   // Organization & Loading state
@@ -249,6 +254,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         workers: dbWorkers,
         documents: dbDocs,
         documentTypes: dbDocTypes,
+        workerRoles: dbRoles,
         alerts: dbAlerts,
       } = dashboardResult.data;
 
@@ -259,6 +265,9 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       setDocuments(dbDocs.length > 0 ? dbDocs : INITIAL_DOCUMENTS);
       if (dbDocTypes.length > 0) {
         setDocumentTypes(dbDocTypes);
+      }
+      if (dbRoles && dbRoles.length > 0) {
+        setWorkerRoles(dbRoles);
       }
       if (dbAlerts.length > 0) {
         setAlerts(dbAlerts);
@@ -495,16 +504,23 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     // Demo Mode fallback
+    const contractorStatus: ContractorStatus =
+      payload.status === 'CONFORME' || payload.status === 'active'
+        ? 'CONFORME'
+        : payload.status === 'BLOQUEADA' || payload.status === 'blocked'
+        ? 'BLOQUEADA'
+        : 'PARCIAL';
+
     const newContractor: Contractor = {
       id: `c-demo-${Date.now()}`,
-      name: payload.name,
+      name: payload.name || payload.tradeName,
       tradeName: payload.tradeName,
       cnpj: payload.cnpj,
-      cnpjMasked: payload.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'),
-      responsibleName: payload.responsibleName,
-      responsibleEmail: payload.responsibleEmail,
-      responsiblePhone: payload.responsiblePhone,
-      status: payload.status || 'PARCIAL',
+      cnpjMasked: payload.cnpj ? payload.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : '**.***.***/0001-**',
+      responsibleName: payload.responsibleName || payload.contactName || '',
+      responsibleEmail: payload.responsibleEmail || payload.contactEmail || '',
+      responsiblePhone: payload.responsiblePhone || payload.contactPhone || '',
+      status: contractorStatus,
       complianceRate: 50,
       totalWorkers: 0,
       activeWorkers: 0,
@@ -522,40 +538,57 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   // 2. Add Worker
-  const addWorker = async (payload: CreateWorkerPayload): Promise<{ success: boolean; error?: string }> => {
+  const addWorker = async (payload: CreateWorkerPayload): Promise<{ success: boolean; workerCreated?: boolean; error?: string }> => {
     const supabase = getSupabaseClient();
     if (isUsingSupabaseData && organizationId && supabase) {
       const result = await createWorker(supabase, organizationId, payload);
       if (!result.success) {
+        if (result.workerCreated) {
+          // Worker created but site assignment failed
+          await loadDataFromSupabase();
+          showToast('Aviso de Cadastro', result.error || 'Trabalhador cadastrado, mas o vínculo com a obra falhou.', 'warning');
+          return { success: false, workerCreated: true, error: result.error };
+        }
         showToast('Erro ao cadastrar trabalhador', result.error || 'Falha ao salvar', 'error');
         return { success: false, error: result.error };
       }
       await loadDataFromSupabase();
-      showToast('Trabalhador Cadastrado', `${payload.name} cadastrado com status inicial BLOQUEADO.`, 'success');
+      showToast('Trabalhador Cadastrado', `${payload.fullName || payload.name} cadastrado com status inicial BLOQUEADO.`, 'success');
       return { success: true };
     }
 
     // Demo Mode fallback
     const contractor = contractors.find((c) => c.id === payload.contractorId);
-    const maskedCpf = payload.cpf ? payload.cpf.replace(/(\d{3})\.?(\d{3})\.?(\d{3})-?(\d{2})/, '$1.***.***-$4') : '000.***.***-00';
-    const initials = payload.name
+    const workerName = payload.fullName || payload.name || 'Novo Trabalhador';
+    const cleanCpf = payload.cpf ? payload.cpf.replace(/\D/g, '') : '';
+    const maskedCpf = cleanCpf.length === 11
+      ? `${cleanCpf.slice(0, 3)}.${cleanCpf.slice(3, 6)}.${cleanCpf.slice(6, 9)}-${cleanCpf.slice(9, 11)}`
+      : '000.***.***-00';
+    const cpfLast4 = cleanCpf.length >= 4 ? cleanCpf.slice(-4) : (payload.cpfLast4 || '0000');
+    const initials = workerName
       .split(' ')
       .slice(0, 2)
       .map((n) => n[0])
       .join('')
       .toUpperCase();
 
+    const selectedRole = workerRoles.find((r) => r.id === (payload.workerRoleId || payload.roleId));
+    const roleName = payload.role || selectedRole?.name || 'Operacional';
+
     const newWorker: Worker = {
       id: `w-demo-${Date.now()}`,
-      name: payload.name,
+      name: workerName,
       cpf: payload.cpf,
       cpfMasked: maskedCpf,
-      role: payload.role,
+      cpfLast4,
+      role: roleName,
+      workerRoleId: payload.workerRoleId || payload.roleId || 'role-1',
+      employeeCode: payload.employeeCode || `OP-${Date.now().toString().slice(-6)}`,
       contractorId: payload.contractorId,
       contractorName: contractor?.tradeName || 'Terceirizada',
       siteIds: payload.siteId ? [payload.siteId] : [],
       status: 'BLOQUEADO',
-      blockReason: 'Documentação admissional pendente de envio e aprovação',
+      blockReason: payload.blockingReason || 'Documentação admissional pendente de envio e aprovação',
       approvedDocumentsCount: 0,
       underReviewDocumentsCount: 0,
       pendingDocumentsCount: 4,
@@ -563,9 +596,11 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       totalRequiredDocuments: 4,
       avatarInitials: initials || 'TR',
       admissionDate: payload.admissionDate || new Date().toISOString().split('T')[0],
+      email: payload.email,
+      phone: payload.phone,
     };
     setWorkers((prev) => [newWorker, ...prev]);
-    showToast('Trabalhador Cadastrado', `${payload.name} cadastrado com status inicial BLOQUEADO.`, 'success');
+    showToast('Trabalhador Cadastrado', `${workerName} cadastrado com status inicial BLOQUEADO.`, 'success');
     return { success: true };
   };
 
@@ -620,11 +655,22 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     // Demo Mode fallback
+    const domainCategory: 'SEGURANCA' | 'SAUDE' | 'CLT' | 'QUALIFICACAO' | 'CORPORATIVO' =
+      payload.category === 'safety' || payload.category === 'SEGURANCA'
+        ? 'SEGURANCA'
+        : payload.category === 'occupational_health' || payload.category === 'SAUDE'
+        ? 'SAUDE'
+        : payload.category === 'personal' || payload.category === 'CLT'
+        ? 'CLT'
+        : payload.category === 'training' || payload.category === 'certification' || payload.category === 'QUALIFICACAO'
+        ? 'QUALIFICACAO'
+        : 'CORPORATIVO';
+
     const newDocType: DocumentTypeDefinition = {
       id: `dt-demo-${Date.now()}`,
       code: payload.name.toUpperCase().replace(/\s+/g, '_'),
       name: payload.name,
-      category: payload.category,
+      category: domainCategory,
       description: payload.description || '',
       validityMonths: payload.hasExpiration ? (payload.validityMonths || 12) : null,
       isActive: payload.isActive ?? true,
@@ -762,6 +808,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         alerts,
         notificationLogs,
         documentTypes,
+        workerRoles,
         users,
         organizationId,
         organizationName,

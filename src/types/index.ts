@@ -12,6 +12,13 @@ export type ContractorStatus = 'CONFORME' | 'PARCIAL' | 'BLOQUEADA';
 
 export type AlertSeverity = 'CRITICA' | 'ATENCAO' | 'INFORMATIVA';
 
+export interface WorkerRole {
+  id: string;
+  name: string;
+  code?: string;
+  description?: string;
+}
+
 export interface DocumentTypeDefinition {
   id: string;
   name: string;
@@ -38,6 +45,7 @@ export interface WorkerDocument {
   issueDate: string; // ISO YYYY-MM-DD
   expiryDate: string | null; // null = Não se aplica
   status: DocumentStatus;
+  requirementId?: string | null;
   fileUrl?: string;
   filePath?: string;
   fileSize?: string;
@@ -58,7 +66,10 @@ export interface Worker {
   name: string;
   cpfMasked: string; // e.g. ***.452.890-**
   cpf?: string;
+  cpfLast4?: string;
   role: string;
+  workerRoleId?: string;
+  employeeCode?: string;
   contractorId: string;
   contractorName: string;
   siteIds: string[];
@@ -71,6 +82,8 @@ export interface Worker {
   totalRequiredDocuments: number;
   avatarInitials: string;
   admissionDate: string;
+  email?: string;
+  phone?: string;
 }
 
 export interface Contractor {

@@ -1,21 +1,32 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
 export interface CreateContractorPayload {
-  name: string;
+  name?: string;
+  legalName?: string;
   tradeName: string;
-  cnpj: string;
-  responsibleName: string;
-  responsibleEmail: string;
-  responsiblePhone: string;
-  status?: 'CONFORME' | 'PARCIAL' | 'BLOQUEADA';
+  cnpj?: string;
+  taxIdMasked?: string;
+  responsibleName?: string;
+  contactName?: string;
+  responsibleEmail?: string;
+  contactEmail?: string;
+  responsiblePhone?: string;
+  contactPhone?: string;
+  status?: 'CONFORME' | 'PARCIAL' | 'BLOQUEADA' | 'active' | 'inactive' | 'blocked';
 }
 
 export interface CreateWorkerPayload {
-  name: string;
-  cpf: string;
-  role: string;
+  name?: string;
+  fullName?: string;
+  cpf?: string;
+  cpfLast4?: string;
+  role?: string;
+  workerRoleId?: string;
+  roleId?: string;
   contractorId: string;
   siteId?: string;
+  employeeCode?: string;
+  blockingReason?: string;
   admissionDate?: string;
   email?: string;
   phone?: string;
@@ -25,22 +36,25 @@ export interface CreateSitePayload {
   code: string;
   name: string;
   clientName: string;
-  location: string;
-  startDate: string;
-  endDate: string;
-  status?: 'planejado' | 'ativo' | 'concluido' | 'suspenso';
+  location?: string;
+  startDate?: string;
+  startsOn?: string;
+  endDate?: string | null;
+  endsOn?: string | null;
+  status?: 'planejado' | 'ativo' | 'concluido' | 'suspenso' | 'planned' | 'active' | 'completed' | 'suspended';
 }
 
 export interface CreateDocumentTypePayload {
   name: string;
-  category: 'SEGURANCA' | 'SAUDE' | 'CLT' | 'QUALIFICACAO' | 'CORPORATIVO';
+  category: 'SEGURANCA' | 'SAUDE' | 'CLT' | 'QUALIFICACAO' | 'CORPORATIVO' | 'safety' | 'occupational_health' | 'personal' | 'training' | 'certification' | 'other';
   description?: string;
   hasExpiration: boolean;
   validityMonths?: number | null;
   earlyAlertDays?: number;
   isActive?: boolean;
-  isMandatory: boolean;
+  isMandatory?: boolean;
   requirementScope: 'ORGANIZATION' | 'ROLE' | 'CONTRACTOR' | 'SITE';
+  workerRoleId?: string;
   roleId?: string;
   contractorId?: string;
   siteId?: string;
@@ -48,25 +62,28 @@ export interface CreateDocumentTypePayload {
 
 export interface UploadWorkerDocumentPayload {
   workerId: string;
-  contractorId: string;
+  contractorId?: string;
   siteId?: string;
   documentTypeId: string;
-  issueDate: string;
+  requirementId?: string | null;
+  issueDate?: string;
+  issuedOn?: string;
   expiryDate?: string | null;
+  expiresOn?: string | null;
   notes?: string;
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_MIME_TYPES = [
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/jpg',
-];
-const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
+
+const MIME_EXTENSION_MAP: Record<string, string[]> = {
+  'application/pdf': ['.pdf'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+};
 
 /**
- * Validates document file type and size.
+ * Validates document file extension and MIME type strictly.
+ * Ensures renamed executables or mismatched extensions are rejected.
  */
 export function validateUploadFile(file: File): { valid: boolean; error?: string } {
   if (!file) {
@@ -80,22 +97,60 @@ export function validateUploadFile(file: File): { valid: boolean; error?: string
     };
   }
 
-  const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
-  const isAllowedExt = ALLOWED_EXTENSIONS.includes(extension);
-  const isAllowedMime = ALLOWED_MIME_TYPES.includes(file.type.toLowerCase()) || isAllowedExt;
+  const fileName = file.name.toLowerCase();
+  const fileExt = `.${fileName.split('.').pop() || ''}`;
+  const fileMime = (file.type || '').toLowerCase().trim();
 
-  if (!isAllowedExt && !isAllowedMime) {
+  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+  if (!allowedExtensions.includes(fileExt)) {
     return {
       valid: false,
-      error: 'Formato não suportado. Utilize apenas arquivos PDF, JPG, JPEG ou PNG.',
+      error: 'Extensão não suportada. Utilize apenas arquivos .pdf, .jpg, .jpeg ou .png.',
     };
+  }
+
+  // Strict MIME type verification against extension
+  if (fileMime) {
+    const validExtsForMime = MIME_EXTENSION_MAP[fileMime];
+    if (!validExtsForMime || !validExtsForMime.includes(fileExt)) {
+      return {
+        valid: false,
+        error: `O tipo MIME (${file.type}) é incompatível com a extensão (${fileExt}). Não são aceitos arquivos corrompidos ou renomeados.`,
+      };
+    }
   }
 
   return { valid: true };
 }
 
 /**
- * Creates a new contractor in the Supabase database.
+ * Masks a CNPJ for privacy (never store raw CNPJ in tax_id_masked).
+ */
+function generateTaxIdMasked(payload: CreateContractorPayload): string {
+  if (payload.taxIdMasked) return payload.taxIdMasked;
+  if (!payload.cnpj) return '**.***.***/0001-**';
+
+  const clean = payload.cnpj.replace(/\D/g, '');
+  if (clean.length === 14) {
+    return `**.***.${clean.slice(5, 8)}/${clean.slice(8, 12)}-**`;
+  }
+  return '**.***.***/0001-**';
+}
+
+/**
+ * Maps contractor status to allowed DB values ('active' | 'inactive' | 'blocked').
+ */
+function mapContractorDbStatus(status?: string): 'active' | 'inactive' | 'blocked' {
+  if (!status) return 'active';
+  const s = status.toLowerCase();
+  if (s === 'bloqueada' || s === 'blocked') return 'blocked';
+  if (s === 'inactive' || s === 'inativo' || s === 'parcial') return 'inactive';
+  return 'active';
+}
+
+/**
+ * 1. TERCEIRIZADAS (contractors)
+ * Exclusively uses: organization_id, legal_name, trade_name, tax_id_masked, contact_name, contact_email, contact_phone, status.
  */
 export async function createContractor(
   supabase: SupabaseClient,
@@ -106,26 +161,23 @@ export async function createContractor(
     return { success: false, error: 'Identificador da organização não informado' };
   }
 
-  if (!payload.name || !payload.tradeName) {
+  const legalName = (payload.legalName || payload.name || payload.tradeName || '').trim();
+  const tradeName = (payload.tradeName || payload.legalName || payload.name || '').trim();
+
+  if (!legalName || !tradeName) {
     return { success: false, error: 'Razão social e nome fantasia são obrigatórios' };
   }
 
   try {
-    const rawStatus = payload.status === 'CONFORME' ? 'compliant' : payload.status === 'BLOQUEADA' ? 'blocked' : 'partial';
-
     const insertData = {
       organization_id: organizationId,
-      name: payload.name.trim(),
-      trade_name: payload.tradeName.trim(),
-      corporate_name: payload.name.trim(),
-      cnpj: payload.cnpj.trim(),
-      contact_name: payload.responsibleName?.trim() || null,
-      responsible_name: payload.responsibleName?.trim() || null,
-      contact_email: payload.responsibleEmail?.trim() || null,
-      responsible_email: payload.responsibleEmail?.trim() || null,
-      contact_phone: payload.responsiblePhone?.trim() || null,
-      responsible_phone: payload.responsiblePhone?.trim() || null,
-      status: rawStatus,
+      legal_name: legalName,
+      trade_name: tradeName,
+      tax_id_masked: generateTaxIdMasked(payload),
+      contact_name: (payload.contactName || payload.responsibleName || '').trim() || null,
+      contact_email: (payload.contactEmail || payload.responsibleEmail || '').trim() || null,
+      contact_phone: (payload.contactPhone || payload.responsiblePhone || '').trim() || null,
+      status: mapContractorDbStatus(payload.status),
     };
 
     const { data, error } = await supabase
@@ -147,32 +199,57 @@ export async function createContractor(
 }
 
 /**
- * Creates a new worker and initial work assignment in Supabase.
- * Starts with status BLOQUEADO (blocked) as mandatory compliance rule.
+ * 2. TRABALHADORES (workers) & 3. ALOCAÇÃO (worker_assignments)
+ * Exclusively uses:
+ * - workers: organization_id, contractor_id, worker_role_id, full_name, employee_code, cpf_last4, email, phone, status = 'blocked', blocking_reason
+ * - worker_assignments: organization_id, worker_id, site_id, starts_on, ends_on, active = true
  */
 export async function createWorker(
   supabase: SupabaseClient,
   organizationId: string,
   payload: CreateWorkerPayload
-): Promise<{ success: boolean; data?: any; error?: string }> {
+): Promise<{ success: boolean; data?: any; workerCreated?: boolean; error?: string }> {
   if (!organizationId) {
     return { success: false, error: 'Identificador da organização não informado' };
   }
 
-  if (!payload.name || !payload.contractorId || !payload.role) {
-    return { success: false, error: 'Nome, terceirizada e função são obrigatórios' };
+  const fullName = (payload.fullName || payload.name || '').trim();
+  if (!fullName) {
+    return { success: false, error: 'Nome completo do trabalhador é obrigatório' };
   }
 
+  if (!payload.contractorId) {
+    return { success: false, error: 'Empresa terceirizada é obrigatória' };
+  }
+
+  const workerRoleId = payload.workerRoleId || payload.roleId;
+  if (!workerRoleId) {
+    return {
+      success: false,
+      error: 'Selecione uma função válida cadastrada no sistema. O cargo é obrigatório.',
+    };
+  }
+
+  // Extract cpf_last4
+  const rawCpf = payload.cpf ? payload.cpf.replace(/\D/g, '') : '';
+  const cpf_last4 = rawCpf.length >= 4 ? rawCpf.slice(-4) : (payload.cpfLast4 || '0000');
+
+  const employeeCode = payload.employeeCode || `OP-${Date.now().toString().slice(-6)}`;
+  const blockingReason = payload.blockingReason || 'Pendente de envio de documentação obrigatória';
+
   try {
-    // 1. Insert Worker with initial status 'blocked'
+    // 1. Insert Worker with exact schema columns
     const workerData = {
       organization_id: organizationId,
       contractor_id: payload.contractorId,
-      name: payload.name.trim(),
-      cpf: payload.cpf?.trim() || null,
-      role: payload.role.trim(),
+      worker_role_id: workerRoleId,
+      full_name: fullName,
+      employee_code: employeeCode,
+      cpf_last4,
+      email: payload.email?.trim() || null,
+      phone: payload.phone?.trim() || null,
       status: 'blocked',
-      admission_date: payload.admissionDate || new Date().toISOString().split('T')[0],
+      blocking_reason: blockingReason,
     };
 
     const { data: newWorker, error: workerErr } = await supabase
@@ -186,13 +263,16 @@ export async function createWorker(
       return { success: false, error: `Erro ao cadastrar trabalhador: ${workerErr.message}` };
     }
 
-    // 2. If siteId provided, create worker_assignment
+    // 2. If siteId provided, create worker_assignment with exact schema columns
     if (payload.siteId && newWorker?.id) {
+      const startsOn = payload.admissionDate || new Date().toISOString().split('T')[0];
       const assignmentData = {
         organization_id: organizationId,
         worker_id: newWorker.id,
         site_id: payload.siteId,
-        status: 'active',
+        starts_on: startsOn,
+        ends_on: null,
+        active: true,
       };
 
       const { error: assignErr } = await supabase
@@ -201,6 +281,12 @@ export async function createWorker(
 
       if (assignErr) {
         console.warn('Aviso: erro ao vincular obra inicial:', assignErr.message);
+        return {
+          success: false,
+          workerCreated: true,
+          data: newWorker,
+          error: `Trabalhador cadastrado com sucesso, mas o vínculo com a obra falhou: ${assignErr.message}`,
+        };
       }
     }
 
@@ -212,7 +298,21 @@ export async function createWorker(
 }
 
 /**
- * Creates a new site/contract in Supabase.
+ * Maps site status to allowed DB values ('planned' | 'active' | 'completed' | 'suspended').
+ */
+function mapSiteDbStatus(status?: string): 'planned' | 'active' | 'completed' | 'suspended' {
+  if (!status) return 'active';
+  const s = status.toLowerCase();
+  if (s === 'planejado' || s === 'planned') return 'planned';
+  if (s === 'concluido' || s === 'concluído' || s === 'completed') return 'completed';
+  if (s === 'suspenso' || s === 'suspended') return 'suspended';
+  return 'active';
+}
+
+/**
+ * 4. OBRAS E CONTRATOS (sites)
+ * Exclusively uses: organization_id, code, name, client_name, location, starts_on, ends_on, status.
+ * Never stores "Contínuo" in date columns; uses null for continuous end date.
  */
 export async function createSite(
   supabase: SupabaseClient,
@@ -228,15 +328,23 @@ export async function createSite(
   }
 
   try {
+    const startsOn = payload.startsOn || payload.startDate || new Date().toISOString().split('T')[0];
+
+    let endsOn: string | null = null;
+    const rawEnd = (payload.endsOn || payload.endDate || '').trim();
+    if (rawEnd && rawEnd.toLowerCase() !== 'contínuo' && rawEnd.toLowerCase() !== 'continuo') {
+      endsOn = rawEnd;
+    }
+
     const insertData = {
       organization_id: organizationId,
       code: payload.code.trim().toUpperCase(),
       name: payload.name.trim(),
       client_name: payload.clientName.trim(),
-      location: payload.location?.trim() || 'Não informada',
-      start_date: payload.startDate || new Date().toISOString().split('T')[0],
-      end_date: payload.endDate || 'Contínuo',
-      status: payload.status || 'active',
+      location: payload.location?.trim() || null,
+      starts_on: startsOn,
+      ends_on: endsOn,
+      status: mapSiteDbStatus(payload.status),
     };
 
     const { data, error } = await supabase
@@ -258,7 +366,23 @@ export async function createSite(
 }
 
 /**
- * Creates a new custom Document Type and its associated requirements.
+ * Maps category to allowed DB category values.
+ */
+function mapCategoryToDb(category: string): 'personal' | 'occupational_health' | 'training' | 'certification' | 'safety' | 'other' {
+  const c = category.toLowerCase().trim();
+  if (c === 'saude' || c === 'saúde' || c === 'occupational_health') return 'occupational_health';
+  if (c === 'clt' || c === 'personal' || c === 'trabalhista') return 'personal';
+  if (c === 'qualificacao' || c === 'qualificação' || c === 'training') return 'training';
+  if (c === 'certification') return 'certification';
+  if (c === 'corporativo' || c === 'other') return 'other';
+  return 'safety';
+}
+
+/**
+ * 5. TIPOS DOCUMENTAIS (document_types) & 6. EXIGÊNCIAS (document_requirements)
+ * Exclusively uses:
+ * - document_types: organization_id, name, category, description, has_expiration, warning_days, active
+ * - document_requirements: organization_id, document_type_id, worker_role_id, contractor_id, site_id, required, warning_days, active
  */
 export async function createDocumentType(
   supabase: SupabaseClient,
@@ -274,14 +398,18 @@ export async function createDocumentType(
   }
 
   try {
+    const dbCategory = mapCategoryToDb(payload.category);
+    const warningDays = payload.earlyAlertDays || (payload.hasExpiration ? 30 : null);
+
     // 1. Insert in document_types
     const docTypeData = {
       organization_id: organizationId,
       name: payload.name.trim(),
-      category: payload.category,
+      category: dbCategory,
       description: payload.description?.trim() || null,
-      validity_months: payload.hasExpiration ? (payload.validityMonths || 12) : null,
-      is_mandatory: payload.isMandatory,
+      has_expiration: payload.hasExpiration,
+      warning_days: warningDays,
+      active: payload.isActive ?? true,
     };
 
     const { data: newDocType, error: docTypeErr } = await supabase
@@ -295,27 +423,39 @@ export async function createDocumentType(
       return { success: false, error: `Erro no Supabase: ${docTypeErr.message}` };
     }
 
-    // 2. Insert requirement if specific scope is defined
+    // 2. Insert document_requirements
     if (newDocType?.id) {
-      const reqData: any = {
+      const roleId = payload.requirementScope === 'ROLE' ? (payload.workerRoleId || payload.roleId || null) : null;
+      const contractorId = payload.requirementScope === 'CONTRACTOR' ? (payload.contractorId || null) : null;
+      const siteId = payload.requirementScope === 'SITE' ? (payload.siteId || null) : null;
+
+      const reqData = {
         organization_id: organizationId,
         document_type_id: newDocType.id,
-        is_mandatory: payload.isMandatory,
+        worker_role_id: roleId,
+        contractor_id: contractorId,
+        site_id: siteId,
+        required: payload.isMandatory ?? true,
+        warning_days: warningDays || 30,
+        active: true,
       };
-
-      if (payload.requirementScope === 'ROLE' && payload.roleId) {
-        reqData.role_id = payload.roleId;
-      }
-      if (payload.requirementScope === 'SITE' && payload.siteId) {
-        reqData.site_id = payload.siteId;
-      }
 
       const { error: reqErr } = await supabase
         .from('document_requirements')
         .insert(reqData);
 
       if (reqErr) {
-        console.warn('Aviso: falha ao inserir exigência de documento:', reqErr.message);
+        console.warn('Falha ao inserir exigência de documento:', reqErr.message);
+        // Rollback / deactivate created document_type so it is not active without rule
+        await supabase
+          .from('document_types')
+          .update({ active: false })
+          .eq('id', newDocType.id);
+
+        return {
+          success: false,
+          error: `Erro ao criar exigência documental: ${reqErr.message}`,
+        };
       }
     }
 
@@ -342,14 +482,20 @@ export async function updateDocumentType(
   try {
     const updateData: any = {};
     if (payload.name !== undefined) updateData.name = payload.name.trim();
-    if (payload.category !== undefined) updateData.category = payload.category;
-    if (payload.description !== undefined) updateData.description = payload.description;
+    if (payload.category !== undefined) updateData.category = mapCategoryToDb(payload.category);
+    if (payload.description !== undefined) updateData.description = payload.description.trim() || null;
     if (payload.hasExpiration !== undefined) {
-      updateData.validity_months = payload.hasExpiration ? (payload.validityMonths || 12) : null;
-    } else if (payload.validityMonths !== undefined) {
-      updateData.validity_months = payload.validityMonths;
+      updateData.has_expiration = payload.hasExpiration;
+      if (!payload.hasExpiration) {
+        updateData.warning_days = null;
+      }
     }
-    if (payload.isMandatory !== undefined) updateData.is_mandatory = payload.isMandatory;
+    if (payload.earlyAlertDays !== undefined) {
+      updateData.warning_days = payload.earlyAlertDays;
+    }
+    if (payload.isActive !== undefined) {
+      updateData.active = payload.isActive;
+    }
 
     const { data, error } = await supabase
       .from('document_types')
@@ -371,35 +517,59 @@ export async function updateDocumentType(
 }
 
 /**
- * Uploads a worker document to Supabase Storage and records it in worker_documents.
- * Follows strict security rules:
- * - Private bucket: worker-documents
- * - Storage path: organization_id/worker_id/doc_id/file_name
- * - Status initial: under_review (AGUARDANDO_ANALISE)
- * - Safe rollback if DB insert fails
+ * Generates a valid UUID v4 string.
+ */
+function generateUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * 7. DOCUMENTOS DOS TRABALHADORES (worker_documents)
+ * Exclusively uses:
+ * - id: UUID
+ * - organization_id
+ * - worker_id
+ * - document_type_id
+ * - requirement_id
+ * - file_path
+ * - original_file_name
+ * - mime_type
+ * - file_size_bytes (number)
+ * - issued_on
+ * - expires_on
+ * - status = 'under_review'
+ * - uploaded_by
  */
 export async function uploadWorkerDocument(
   supabase: SupabaseClient,
   organizationId: string,
   file: File,
-  payload: UploadWorkerDocumentPayload
+  payload: UploadWorkerDocumentPayload,
+  uploadedByUserId?: string | null
 ): Promise<{ success: boolean; data?: any; error?: string }> {
   if (!organizationId) {
     return { success: false, error: 'Identificador da organização não informado' };
   }
 
-  // 1. Validate file
+  // 1. Validate file format and MIME consistency
   const validation = validateUploadFile(file);
   if (!validation.valid) {
     return { success: false, error: validation.error };
   }
 
-  const docId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+  const docId = generateUuid();
   const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const filePath = `${organizationId}/${payload.workerId}/${docId}/${sanitizedFileName}`;
 
   try {
-    // 2. Attempt upload to Supabase Storage in private bucket 'worker-documents'
+    // 2. Upload to Supabase Storage in private bucket 'worker-documents'
     const { error: uploadError } = await supabase.storage
       .from('worker-documents')
       .upload(filePath, file, {
@@ -409,29 +579,45 @@ export async function uploadWorkerDocument(
 
     if (uploadError) {
       console.warn('Erro ao enviar arquivo para o Storage:', uploadError.message);
-      // Explicit feedback required when storage bucket or policies are missing
       return {
         success: false,
         error: 'Armazenamento de documentos ainda não configurado',
       };
     }
 
-    // 3. Insert record into worker_documents
-    const fileSizeFormatted = `${(file.size / 1024).toFixed(0)} KB`;
+    // 3. Find requirement_id if not explicitly provided
+    let requirementId = payload.requirementId || null;
+    if (!requirementId && payload.documentTypeId) {
+      const { data: reqs } = await supabase
+        .from('document_requirements')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('document_type_id', payload.documentTypeId)
+        .limit(1);
+
+      if (reqs && reqs.length > 0) {
+        requirementId = reqs[0].id;
+      }
+    }
+
+    const issuedOn = payload.issuedOn || payload.issueDate || new Date().toISOString().split('T')[0];
+    const expiresOn = payload.expiresOn !== undefined ? payload.expiresOn : (payload.expiryDate || null);
+
+    // 4. Insert record into worker_documents with exact schema columns
     const docRecord = {
       id: docId,
       organization_id: organizationId,
       worker_id: payload.workerId,
       document_type_id: payload.documentTypeId,
-      contractor_id: payload.contractorId,
-      site_id: payload.siteId || null,
-      status: 'under_review',
-      issue_date: payload.issueDate,
-      expiry_date: payload.expiryDate || null,
+      requirement_id: requirementId,
       file_path: filePath,
-      file_name: file.name,
-      file_size: fileSizeFormatted,
-      correction_notes: payload.notes || null,
+      original_file_name: file.name,
+      mime_type: file.type || 'application/pdf',
+      file_size_bytes: file.size,
+      issued_on: issuedOn,
+      expires_on: expiresOn,
+      status: 'under_review',
+      uploaded_by: uploadedByUserId || null,
     };
 
     const { data: insertedDoc, error: dbError } = await supabase
@@ -462,7 +648,7 @@ export async function uploadWorkerDocument(
 }
 
 /**
- * Generates a secure, temporary signed URL for private document download.
+ * Generates a temporary signed URL for private document download.
  */
 export async function getDocumentDownloadUrl(
   supabase: SupabaseClient,
@@ -492,7 +678,7 @@ export async function getDocumentDownloadUrl(
 }
 
 /**
- * Updates organization subscriber profile (only available DB columns).
+ * Updates organization subscriber profile.
  */
 export async function updateOrganizationProfile(
   supabase: SupabaseClient,
@@ -524,3 +710,87 @@ export async function updateOrganizationProfile(
     return { success: false, error: msg };
   }
 }
+
+/**
+ * Updates contractor status.
+ */
+export async function updateContractorStatus(
+  supabase: SupabaseClient,
+  contractorId: string,
+  status: 'active' | 'inactive' | 'blocked'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('contractors')
+      .update({ status })
+      .eq('id', contractorId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Falha ao atualizar status';
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Updates worker status.
+ */
+export async function updateWorkerStatus(
+  supabase: SupabaseClient,
+  workerId: string,
+  status: 'active' | 'inactive' | 'blocked',
+  blockingReason?: string | null
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('workers')
+      .update({
+        status,
+        ...(blockingReason !== undefined ? { blocking_reason: blockingReason } : {}),
+      })
+      .eq('id', workerId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Falha ao atualizar status';
+    return { success: false, error: msg };
+  }
+}
+
+/**
+ * Updates worker document status and reviews.
+ */
+export async function updateDocumentStatus(
+  supabase: SupabaseClient,
+  documentId: string,
+  status: 'under_review' | 'approved' | 'rejected' | 'expired',
+  notes?: string,
+  rejectionReason?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('worker_documents')
+      .update({
+        status,
+        rejection_reason: rejectionReason || null,
+        reviewed_at: new Date().toISOString(),
+        ...(notes ? { notes } : {}),
+      })
+      .eq('id', documentId);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Falha ao atualizar status do documento';
+    return { success: false, error: msg };
+  }
+}
+
+// Aliases for compatibility
+export const insertContractor = createContractor;
+export const insertWorker = createWorker;
+export const insertSite = createSite;
+export const insertDocumentType = createDocumentType;
+

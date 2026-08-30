@@ -151,7 +151,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
               <div>
                 <span className="text-[10px] uppercase font-bold text-blue-700 block">Conformidade Geral</span>
                 <span className="text-lg font-black text-blue-700">
-                  {indicators?.complianceRate || 75}%
+                  {indicators?.complianceRate ?? 0}%
                 </span>
               </div>
             </div>

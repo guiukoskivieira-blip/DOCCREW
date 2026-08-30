@@ -7,7 +7,21 @@ import {
   AlertNotification,
   NotificationHistoryLog,
   SystemUser,
+  WorkerRole,
 } from '../types';
+
+export const INITIAL_WORKER_ROLES: WorkerRole[] = [
+  { id: 'role-1', name: 'Eletricista de Manutenção', code: 'ELET-01', description: 'Atividades em baixa e média tensão com NR-10' },
+  { id: 'role-2', name: 'Montador de Estruturas Metálicas', code: 'MONT-02', description: 'Trabalho em altura com NR-35' },
+  { id: 'role-3', name: 'Soldador TIG / Eletrodo', code: 'SOLD-03', description: 'Solda e corte a quente com NR-33/NR-35' },
+  { id: 'role-4', name: 'Técnico de Refrigeração e HVAC', code: 'REFR-04', description: 'Manutenção de climatização industrial' },
+  { id: 'role-5', name: 'Pintor Industrial e Hidrojatista', code: 'PINT-05', description: 'Pintura e preparação de superfícies' },
+  { id: 'role-6', name: 'Encanador e Tubista Industrial', code: 'TUBO-06', description: 'Tubulações e redes de utilidades' },
+  { id: 'role-7', name: 'Mecânico de Manutenção Industrial', code: 'MECA-07', description: 'Preventiva e corretiva mecânica' },
+  { id: 'role-8', name: 'Técnico em Eletrotécnica', code: 'ELET-08', description: 'Supervisão técnica e comissionamento' },
+  { id: 'role-9', name: 'Operador de Guindaste / Munck', code: 'OPER-09', description: 'Movimentação e içamento de cargas' },
+  { id: 'role-10', name: 'Auxiliar de Montagem e Serviços Gerais', code: 'AUX-10', description: 'Apoio operacional de canteiro' },
+];
 
 export const INITIAL_DOCUMENT_TYPES: DocumentTypeDefinition[] = [
   {

@@ -16,11 +16,12 @@ export const CreateWorkerModal: React.FC<CreateWorkerModalProps> = ({
   defaultContractorId,
   defaultSiteId,
 }) => {
-  const { contractors, worksites, addWorker } = useDocuCrew();
+  const { contractors, worksites, workerRoles, addWorker } = useDocuCrew();
 
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
-  const [role, setRole] = useState('');
+  const [workerRoleId, setWorkerRoleId] = useState(workerRoles[0]?.id || '');
+  const [customRoleName, setCustomRoleName] = useState('');
   const [contractorId, setContractorId] = useState(defaultContractorId || contractors[0]?.id || '');
   const [siteId, setSiteId] = useState(defaultSiteId || '');
   const [admissionDate, setAdmissionDate] = useState(new Date().toISOString().split('T')[0]);
@@ -41,7 +42,11 @@ export const CreateWorkerModal: React.FC<CreateWorkerModalProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!name.trim() || !role.trim() || !contractorId) {
+    const selectedRole = workerRoles.find((r) => r.id === workerRoleId);
+    const effectiveRoleName = selectedRole?.name || customRoleName.trim();
+    const effectiveRoleId = workerRoleId || selectedRole?.id || workerRoles[0]?.id;
+
+    if (!name.trim() || !effectiveRoleName || !contractorId) {
       setErrorMsg('Nome, função e empresa terceirizada são obrigatórios.');
       return;
     }
@@ -55,8 +60,11 @@ export const CreateWorkerModal: React.FC<CreateWorkerModalProps> = ({
     setIsSubmitting(true);
     const result = await addWorker({
       name: name.trim(),
+      fullName: name.trim(),
       cpf: cleanCpf,
-      role: role.trim(),
+      role: effectiveRoleName,
+      workerRoleId: effectiveRoleId,
+      roleId: effectiveRoleId,
       contractorId,
       siteId: siteId || undefined,
       admissionDate,
@@ -68,9 +76,12 @@ export const CreateWorkerModal: React.FC<CreateWorkerModalProps> = ({
     if (result.success) {
       setName('');
       setCpf('');
-      setRole('');
+      setCustomRoleName('');
       setEmail('');
       setPhone('');
+      onClose();
+    } else if (result.workerCreated) {
+      // Partial success: worker was created, site assignment failed
       onClose();
     } else {
       setErrorMsg(result.error || 'Erro ao cadastrar trabalhador.');
@@ -162,14 +173,18 @@ export const CreateWorkerModal: React.FC<CreateWorkerModalProps> = ({
             <label className="block font-bold text-slate-800 mb-1">
               Função / Cargo <span className="text-rose-500">*</span>
             </label>
-            <input
-              type="text"
-              required
-              placeholder="Ex: Eletricista de Alta Tensão (NR-10)"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
+            <select
+              value={workerRoleId}
+              onChange={(e) => setWorkerRoleId(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-slate-900 font-semibold focus:ring-2 focus:ring-blue-600 focus:outline-none"
+            >
+              <option value="">Selecione o cargo...</option>
+              {workerRoles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name} ({r.code})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

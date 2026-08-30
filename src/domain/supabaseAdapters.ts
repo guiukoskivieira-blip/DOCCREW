@@ -8,6 +8,7 @@ import {
   WorkerStatus,
   ContractorStatus,
   AlertNotification,
+  WorkerRole,
 } from '../types';
 import { evaluateWorkerCompliance } from './workerCompliance';
 
@@ -57,7 +58,7 @@ export function mapWorkerStatus(rawStatus?: string | null): WorkerStatus {
   if (!rawStatus) return 'BLOQUEADO';
   const normalized = String(rawStatus).trim().toLowerCase();
 
-  if (normalized === 'released' || normalized === 'liberado' || normalized === 'apto') {
+  if (normalized === 'released' || normalized === 'liberado' || normalized === 'apto' || normalized === 'active') {
     return 'LIBERADO';
   }
   return 'BLOQUEADO';
@@ -109,7 +110,7 @@ export function calculateIndicators(
   const pendingDocuments = documents.filter((d) => d.status === 'PENDENTE').length;
 
   const complianceRate =
-    totalWorkers > 0 ? Math.round((releasedWorkers / totalWorkers) * 100) : 100;
+    totalWorkers > 0 ? Math.round((releasedWorkers / totalWorkers) * 100) : 0;
 
   return {
     totalWorkers,
@@ -125,13 +126,16 @@ export function calculateIndicators(
 }
 
 /**
- * Helper to mask CPFs for privacy (e.g., ***.123.456-**).
+ * Helper to mask CPFs for privacy (e.g., ***.***.***-1234 or ***.123.456-**).
  */
 export function maskCpf(cpf?: string | null): string {
   if (!cpf) return '***.***.***-**';
   const clean = cpf.replace(/\D/g, '');
   if (clean.length === 11) {
     return `***.${clean.slice(3, 6)}.${clean.slice(6, 9)}-**`;
+  }
+  if (clean.length === 4) {
+    return `***.***.***-${clean}`;
   }
   return '***.***.***-**';
 }
@@ -165,34 +169,43 @@ export function getAvatarInitials(name?: string | null): string {
  */
 export interface RawContractor {
   id: string;
-  name?: string;
+  organization_id?: string;
+  legal_name?: string;
   trade_name?: string;
+  tax_id_masked?: string;
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  status?: string;
+  // Legacy / fallback fields
+  name?: string;
   corporate_name?: string;
   cnpj?: string;
-  contact_name?: string;
   responsible_name?: string;
-  contact_email?: string;
   responsible_email?: string;
-  contact_phone?: string;
   responsible_phone?: string;
-  status?: string;
   [key: string]: unknown;
 }
 
 export interface RawSite {
   id: string;
-  name?: string;
+  organization_id?: string;
   code?: string;
+  name?: string;
   client_name?: string;
   location?: string;
+  starts_on?: string;
+  ends_on?: string | null;
+  status?: string;
+  // Legacy / fallback fields
   start_date?: string;
   end_date?: string;
-  status?: string;
   [key: string]: unknown;
 }
 
 export interface RawWorkerRole {
   id: string;
+  organization_id?: string;
   name?: string;
   code?: string;
   description?: string;
@@ -201,28 +214,47 @@ export interface RawWorkerRole {
 
 export interface RawWorker {
   id: string;
+  organization_id?: string;
   contractor_id?: string;
+  worker_role_id?: string;
+  full_name?: string;
+  employee_code?: string;
+  cpf_last4?: string;
+  email?: string;
+  phone?: string;
+  status?: string;
+  blocking_reason?: string;
+  // Legacy / fallback fields
   name?: string;
   cpf?: string;
   role_id?: string;
   role?: string;
-  status?: string;
   admission_date?: string;
   [key: string]: unknown;
 }
 
 export interface RawWorkerAssignment {
   id?: string;
+  organization_id?: string;
   worker_id?: string;
   site_id?: string;
+  starts_on?: string;
+  ends_on?: string | null;
+  active?: boolean;
   status?: string;
   [key: string]: unknown;
 }
 
 export interface RawDocumentType {
   id: string;
+  organization_id?: string;
   name?: string;
   category?: string;
+  description?: string;
+  has_expiration?: boolean;
+  warning_days?: number | null;
+  active?: boolean;
+  // Legacy / fallback fields
   validity_months?: number | null;
   is_mandatory?: boolean;
   code?: string;
@@ -231,29 +263,46 @@ export interface RawDocumentType {
 
 export interface RawDocumentRequirement {
   id?: string;
+  organization_id?: string;
   document_type_id?: string;
+  worker_role_id?: string | null;
+  contractor_id?: string | null;
+  site_id?: string | null;
+  required?: boolean;
+  warning_days?: number | null;
+  active?: boolean;
+  // Legacy / fallback fields
   role_id?: string;
-  site_id?: string;
   is_mandatory?: boolean;
   [key: string]: unknown;
 }
 
 export interface RawWorkerDocument {
   id: string;
+  organization_id?: string;
   worker_id?: string;
   document_type_id?: string;
+  requirement_id?: string | null;
+  file_path?: string;
+  original_file_name?: string;
+  mime_type?: string;
+  file_size_bytes?: number;
+  issued_on?: string;
+  expires_on?: string | null;
+  status?: string;
+  uploaded_by?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+  // Legacy / fallback fields
   site_id?: string;
   contractor_id?: string;
-  status?: string;
   issue_date?: string;
   expiry_date?: string | null;
   file_url?: string;
   file_size?: string;
   file_name?: string;
-  rejection_reason?: string;
   correction_notes?: string;
-  reviewed_by?: string;
-  reviewed_at?: string;
   [key: string]: unknown;
 }
 
@@ -263,7 +312,29 @@ export interface AdaptedSupabaseData {
   workers: Worker[];
   documents: WorkerDocument[];
   documentTypes: DocumentTypeDefinition[];
+  workerRoles: WorkerRole[];
   alerts: AlertNotification[];
+}
+
+/**
+ * Normalizes document type category from DB format (e.g. personal, occupational_health, training, safety, other)
+ * to domain category (SEGURANCA, SAUDE, CLT, QUALIFICACAO, CORPORATIVO).
+ */
+export function normalizeDocumentCategory(rawCat?: string | null): DocumentTypeDefinition['category'] {
+  if (!rawCat) return 'SEGURANCA';
+  const c = rawCat.toLowerCase().trim();
+
+  if (c === 'occupational_health' || c === 'saude' || c === 'saúde') return 'SAUDE';
+  if (c === 'personal' || c === 'clt' || c === 'trabalhista') return 'CLT';
+  if (c === 'training' || c === 'certification' || c === 'qualificacao' || c === 'qualificação') return 'QUALIFICACAO';
+  if (c === 'other' || c === 'corporativo' || c === 'corporate') return 'CORPORATIVO';
+  if (c === 'safety' || c === 'seguranca' || c === 'segurança') return 'SEGURANCA';
+
+  const up = rawCat.toUpperCase().trim();
+  if (['SEGURANCA', 'SAUDE', 'CLT', 'QUALIFICACAO', 'CORPORATIVO'].includes(up)) {
+    return up as DocumentTypeDefinition['category'];
+  }
+  return 'SEGURANCA';
 }
 
 /**
@@ -290,43 +361,59 @@ export function adaptSupabaseData(params: {
     rawWorkerDocuments,
   } = params;
 
-  // 1. Map Document Types
+  // 1. Map Worker Roles
+  const workerRoles: WorkerRole[] = rawRoles.map((r) => ({
+    id: String(r.id),
+    name: String(r.name || 'Função Operacional'),
+    code: r.code ? String(r.code) : undefined,
+    description: r.description ? String(r.description) : undefined,
+  }));
+
+  const rolesMap = new Map<string, string>();
+  workerRoles.forEach((r) => {
+    rolesMap.set(r.id, r.name);
+  });
+
+  // 2. Map Document Types
   const documentTypesMap = new Map<string, DocumentTypeDefinition>();
   const documentTypes: DocumentTypeDefinition[] = rawDocumentTypes.map((rawDocType) => {
-    const rawCategory = String(rawDocType.category || 'SEGURANCA').toUpperCase();
-    const category = (['SEGURANCA', 'SAUDE', 'CLT', 'QUALIFICACAO', 'CORPORATIVO'].includes(rawCategory)
-      ? rawCategory
-      : 'SEGURANCA') as DocumentTypeDefinition['category'];
+    const category = normalizeDocumentCategory(rawDocType.category);
 
     const matchingReqs = rawRequirements.filter(
-      (r) => r.document_type_id === rawDocType.id
+      (r) => r.document_type_id === rawDocType.id && r.active !== false
     );
-    const requiredForRoles = matchingReqs.map((r) => r.role_id || '*');
+    const requiredForRoles = matchingReqs
+      .map((r) => r.worker_role_id || r.role_id)
+      .filter((roleId): roleId is string => Boolean(roleId));
+
+    const isMandatory =
+      matchingReqs.length > 0
+        ? matchingReqs.some((r) => r.required !== false && r.is_mandatory !== false)
+        : (rawDocType.is_mandatory ?? true);
+
+    const hasExpiration = rawDocType.has_expiration ?? true;
+    const validityMonths = hasExpiration ? (rawDocType.validity_months ?? 12) : null;
 
     const mapped: DocumentTypeDefinition = {
       id: String(rawDocType.id),
       name: String(rawDocType.name || 'Documento Técnico'),
       category,
-      validityMonths: rawDocType.validity_months ?? null,
-      isMandatory: rawDocType.is_mandatory ?? true,
+      validityMonths,
+      isMandatory,
       requiredForRoles: requiredForRoles.length > 0 ? requiredForRoles : ['*'],
+      description: rawDocType.description ? String(rawDocType.description) : undefined,
+      isActive: rawDocType.active ?? true,
     };
     documentTypesMap.set(mapped.id, mapped);
     return mapped;
   });
 
-  // 2. Map Roles Map
-  const rolesMap = new Map<string, string>();
-  rawRoles.forEach((r) => {
-    rolesMap.set(String(r.id), String(r.name || 'Trabalhador Operacional'));
-  });
-
   // 3. Map Contractors Map & Setup
   const contractorNameMap = new Map<string, { name: string; tradeName: string }>();
   rawContractors.forEach((c) => {
-    const name = String(c.corporate_name || c.name || 'Terceirizada Prestadora');
-    const tradeName = String(c.trade_name || c.name || name);
-    contractorNameMap.set(String(c.id), { name, tradeName });
+    const legalName = String(c.legal_name || c.corporate_name || c.name || 'Terceirizada Prestadora');
+    const tradeName = String(c.trade_name || c.name || legalName);
+    contractorNameMap.set(String(c.id), { name: legalName, tradeName });
   });
 
   // 4. Map Sites Map & Setup
@@ -338,16 +425,26 @@ export function adaptSupabaseData(params: {
     siteNameMap.set(String(s.id), { name, code, clientName });
   });
 
-  // 5. Build assignments lookup
+  // 5. Build assignments lookup (filter active assignments)
   const workerSiteIdsMap = new Map<string, Set<string>>();
-  rawAssignments.forEach((a) => {
-    if (a.worker_id && a.site_id) {
-      const wId = String(a.worker_id);
-      const sId = String(a.site_id);
-      if (!workerSiteIdsMap.has(wId)) {
-        workerSiteIdsMap.set(wId, new Set());
+  rawAssignments
+    .filter((a) => a.active !== false)
+    .forEach((a) => {
+      if (a.worker_id && a.site_id) {
+        const wId = String(a.worker_id);
+        const sId = String(a.site_id);
+        if (!workerSiteIdsMap.has(wId)) {
+          workerSiteIdsMap.set(wId, new Set());
+        }
+        workerSiteIdsMap.get(wId)!.add(sId);
       }
-      workerSiteIdsMap.get(wId)!.add(sId);
+    });
+
+  // Map worker contractor lookup
+  const workerContractorIdMap = new Map<string, string>();
+  rawWorkers.forEach((w) => {
+    if (w.id && w.contractor_id) {
+      workerContractorIdMap.set(String(w.id), String(w.contractor_id));
     }
   });
 
@@ -357,8 +454,13 @@ export function adaptSupabaseData(params: {
     const docTypeId = String(rawDoc.document_type_id || '');
     const docTypeDef = documentTypesMap.get(docTypeId);
     const workerId = String(rawDoc.worker_id || '');
-    const contractorId = String(rawDoc.contractor_id || '');
-    const siteId = String(rawDoc.site_id || '');
+    const contractorId = String(
+      rawDoc.contractor_id || workerContractorIdMap.get(workerId) || ''
+    );
+    const workerAssignedSites = workerSiteIdsMap.get(workerId);
+    const siteId = String(
+      rawDoc.site_id || (workerAssignedSites && workerAssignedSites.size > 0 ? Array.from(workerAssignedSites)[0] : '')
+    );
 
     const contractorInfo = contractorNameMap.get(contractorId);
     const siteInfo = siteNameMap.get(siteId);
@@ -366,23 +468,37 @@ export function adaptSupabaseData(params: {
     const mappedStatus = mapDocumentStatus(rawDoc.status);
     const docName = docTypeDef?.name || 'Documento Técnico';
 
+    const fileSizeFormatted = rawDoc.file_size_bytes
+      ? `${Math.round(Number(rawDoc.file_size_bytes) / 1024)} KB`
+      : rawDoc.file_size
+      ? String(rawDoc.file_size)
+      : undefined;
+
+    const fileNameFormatted =
+      rawDoc.original_file_name ||
+      rawDoc.file_name ||
+      (rawDoc.file_path ? rawDoc.file_path.split('/').pop() : undefined) ||
+      `${docName.replace(/\s+/g, '_')}.pdf`;
+
     const mappedDoc: WorkerDocument = {
       id: String(rawDoc.id),
       workerId,
-      workerName: '', // will backfill after workers map
+      workerName: '', // backfilled after workers map
       contractorId,
       contractorName: contractorInfo?.tradeName || 'Terceirizada',
       siteId,
-      siteName: siteInfo?.name || 'Obra Geral',
+      siteName: siteInfo?.name || 'Canteiro Geral',
       documentTypeId: docTypeId,
       documentTypeName: docName,
       category: docTypeDef?.category || 'SEGURANCA',
-      issueDate: String(rawDoc.issue_date || new Date().toISOString().split('T')[0]),
-      expiryDate: rawDoc.expiry_date ? String(rawDoc.expiry_date) : null,
+      issueDate: String(rawDoc.issued_on || rawDoc.issue_date || new Date().toISOString().split('T')[0]),
+      expiryDate: rawDoc.expires_on ? String(rawDoc.expires_on) : (rawDoc.expiry_date ? String(rawDoc.expiry_date) : null),
       status: mappedStatus,
+      requirementId: rawDoc.requirement_id ? String(rawDoc.requirement_id) : undefined,
+      filePath: rawDoc.file_path ? String(rawDoc.file_path) : undefined,
       fileUrl: rawDoc.file_url ? String(rawDoc.file_url) : undefined,
-      fileSize: rawDoc.file_size ? String(rawDoc.file_size) : undefined,
-      fileName: rawDoc.file_name ? String(rawDoc.file_name) : `${docName.replace(/\s+/g, '_')}.pdf`,
+      fileSize: fileSizeFormatted,
+      fileName: fileNameFormatted,
       rejectionReason: rawDoc.rejection_reason ? String(rawDoc.rejection_reason) : undefined,
       correctionNotes: rawDoc.correction_notes ? String(rawDoc.correction_notes) : undefined,
       reviewedBy: rawDoc.reviewed_by ? String(rawDoc.reviewed_by) : undefined,
@@ -402,9 +518,10 @@ export function adaptSupabaseData(params: {
     const workerId = String(rawWorker.id);
     const contractorId = String(rawWorker.contractor_id || '');
     const contractorInfo = contractorNameMap.get(contractorId);
-    const roleId = String(rawWorker.role_id || '');
+    const roleId = String(rawWorker.worker_role_id || rawWorker.role_id || '');
     const roleName = String(rawWorker.role || rolesMap.get(roleId) || 'Trabalhador Operacional');
-    const workerName = String(rawWorker.name || 'Trabalhador');
+    // Ensure real full_name is prioritized so actual worker names appear
+    const workerName = String(rawWorker.full_name || rawWorker.name || 'Trabalhador');
 
     const assignedSites = Array.from(workerSiteIdsMap.get(workerId) || []);
     const siteIds = assignedSites.length > 0 ? assignedSites : rawSites.length > 0 ? [String(rawSites[0].id)] : [];
@@ -427,16 +544,24 @@ export function adaptSupabaseData(params: {
     // Run official evaluateWorkerCompliance domain logic
     const compliance = evaluateWorkerCompliance(workerDocs, totalRequiredDocuments);
 
+    // CPF masking: prioritize cpf_last4 if present
+    const cpfMasked = rawWorker.cpf_last4
+      ? `***.***.***-${rawWorker.cpf_last4}`
+      : (rawWorker.cpf ? maskCpf(String(rawWorker.cpf)) : '***.***.***-**');
+
     const workerObj: Worker = {
       id: workerId,
       name: workerName,
-      cpfMasked: maskCpf(rawWorker.cpf ? String(rawWorker.cpf) : null),
+      cpfMasked,
+      cpfLast4: rawWorker.cpf_last4 ? String(rawWorker.cpf_last4) : undefined,
       role: roleName,
+      workerRoleId: roleId || undefined,
+      employeeCode: rawWorker.employee_code ? String(rawWorker.employee_code) : undefined,
       contractorId,
       contractorName: contractorInfo?.tradeName || 'Terceirizada',
       siteIds,
       status: compliance.status,
-      blockReason: compliance.blockReason,
+      blockReason: compliance.blockReason || (rawWorker.blocking_reason ? String(rawWorker.blocking_reason) : undefined),
       pendingDocumentsCount: compliance.pendingDocumentsCount,
       expiredDocumentsCount: compliance.expiredDocumentsCount,
       underReviewDocumentsCount: compliance.underReviewDocumentsCount,
@@ -480,17 +605,20 @@ export function adaptSupabaseData(params: {
       status = 'PARCIAL';
     }
 
-    const name = String(rawCont.corporate_name || rawCont.name || 'Terceirizada Prestadora');
-    const tradeName = String(rawCont.trade_name || rawCont.name || name);
+    const legalName = String(rawCont.legal_name || rawCont.corporate_name || rawCont.name || 'Terceirizada Prestadora');
+    const tradeName = String(rawCont.trade_name || rawCont.name || legalName);
+    const cnpjMasked = rawCont.tax_id_masked
+      ? String(rawCont.tax_id_masked)
+      : (rawCont.cnpj ? maskCnpj(String(rawCont.cnpj)) : '**.***.***/0001-**');
 
     return {
       id: cId,
-      name,
+      name: legalName,
       tradeName,
-      cnpjMasked: maskCnpj(rawCont.cnpj ? String(rawCont.cnpj) : null),
-      responsibleName: String(rawCont.responsible_name || rawCont.contact_name || 'Gestor Responsável'),
-      responsibleEmail: String(rawCont.responsible_email || rawCont.contact_email || 'contato@terceirizada.com.br'),
-      responsiblePhone: String(rawCont.responsible_phone || rawCont.contact_phone || '(11) 98765-4321'),
+      cnpjMasked,
+      responsibleName: String(rawCont.contact_name || rawCont.responsible_name || 'Gestor Responsável'),
+      responsibleEmail: String(rawCont.contact_email || rawCont.responsible_email || 'contato@terceirizada.com.br'),
+      responsiblePhone: String(rawCont.contact_phone || rawCont.responsible_phone || '(11) 98765-4321'),
       status,
       totalWorkers,
       activeWorkers,
@@ -518,14 +646,17 @@ export function adaptSupabaseData(params: {
     const siteDocs = documents.filter((d) => d.siteId === sId);
     const criticalPendingCount = siteDocs.filter((d) => d.status === 'VENCIDO' || d.status === 'RECUSADO').length;
 
+    const startDate = String(rawSite.starts_on || rawSite.start_date || '2025-01-01');
+    const endDate = rawSite.ends_on ? String(rawSite.ends_on) : (rawSite.end_date ? String(rawSite.end_date) : 'Contínuo');
+
     return {
       id: sId,
       name: String(rawSite.name || 'Obra / Contrato'),
       code: String(rawSite.code || `OB-${sId.slice(0, 4).toUpperCase()}`),
       clientName: String(rawSite.client_name || 'Cliente Contratante'),
       location: String(rawSite.location || 'São Paulo - SP'),
-      startDate: String(rawSite.start_date || '2025-01-01'),
-      endDate: rawSite.end_date ? String(rawSite.end_date) : 'Contínuo',
+      startDate,
+      endDate,
       contractorIds: siteContractorIds.length > 0 ? siteContractorIds : rawContractors.map((c) => String(c.id)),
       totalWorkers,
       releasedWorkers,
@@ -610,6 +741,7 @@ export function adaptSupabaseData(params: {
     workers,
     documents,
     documentTypes,
+    workerRoles,
     alerts,
   };
 }
