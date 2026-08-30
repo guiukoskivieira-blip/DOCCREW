@@ -3,6 +3,7 @@ import { Menu, Bell, ShieldCheck, UserCheck, AlertTriangle, ChevronDown, Check, 
 import { useDocuCrew } from '../../context/DocuCrewContext';
 import { Link } from 'react-router-dom';
 import { DocuCrewIcon } from '../common/DocuCrewLogo';
+import { UserMenu } from '../auth/UserMenu';
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -132,19 +133,9 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, pageTitle }) => {
           )}
         </div>
 
-        {/* User Badge */}
-        <div className="flex items-center gap-3 pl-2 sm:pl-3 border-l border-slate-200">
-          <div className="w-8 h-8 rounded-full bg-blue-900 text-white font-bold text-xs flex items-center justify-center border border-blue-800">
-            RF
-          </div>
-          <div className="hidden lg:flex flex-col text-left">
-            <span className="text-xs font-bold text-slate-900 leading-tight">
-              Roberto Farias
-            </span>
-            <span className="text-[10px] text-slate-500">
-              Fiscal de Segurança (TST)
-            </span>
-          </div>
+        {/* User Profile & Auth Menu */}
+        <div className="pl-2 sm:pl-3 border-l border-slate-200">
+          <UserMenu />
         </div>
       </div>
     </header>
