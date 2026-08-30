@@ -19,11 +19,14 @@ import {
   Clock,
   Download,
   FileCheck2,
+  UploadCloud,
+  Plus,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { UploadDocumentModal } from '../components/modals/UploadDocumentModal';
 
 export const DocumentosPage: React.FC = () => {
-  const { documents, documentTypes, contractors, worksites } = useDocuCrew();
+  const { documents, documentTypes, contractors, worksites, downloadDocumentFile } = useDocuCrew();
   const location = useLocation();
 
   // Check URL query param for pre-filtered worker
@@ -36,6 +39,23 @@ export const DocumentosPage: React.FC = () => {
   const [contractorFilter, setContractorFilter] = useState<string>('ALL');
   const [siteFilter, setSiteFilter] = useState<string>('ALL');
   const [selectedDoc, setSelectedDoc] = useState<WorkerDocument | null>(null);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [downloadLoading, setDownloadLoading] = useState(false);
+
+  const handleDownload = async (doc: WorkerDocument) => {
+    if (doc.filePath) {
+      setDownloadLoading(true);
+      const url = await downloadDocumentFile(doc.filePath);
+      setDownloadLoading(false);
+      if (url) {
+        window.open(url, '_blank');
+      } else {
+        alert('O arquivo deste documento não foi encontrado no armazenamento.');
+      }
+    } else {
+      alert('Documento de homologação demonstrativo.');
+    }
+  };
 
   // Filtered documents list
   const filteredDocuments = useMemo(() => {
@@ -70,6 +90,13 @@ export const DocumentosPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+          >
+            <Plus className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+            Enviar Documento
+          </button>
           <Link
             to="/analises"
             className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
@@ -371,6 +398,14 @@ export const DocumentosPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Upload Document Modal */}
+      {isUploadModalOpen && (
+        <UploadDocumentModal
+          isOpen={isUploadModalOpen}
+          onClose={() => setIsUploadModalOpen(false)}
+        />
       )}
     </div>
   );

@@ -19,6 +19,9 @@ export interface DocumentTypeDefinition {
   validityMonths: number | null; // null = Não se aplica
   isMandatory: boolean;
   requiredForRoles: string[]; // Role IDs or '*'
+  code?: string;
+  description?: string;
+  isActive?: boolean;
 }
 
 export interface WorkerDocument {
@@ -36,6 +39,7 @@ export interface WorkerDocument {
   expiryDate: string | null; // null = Não se aplica
   status: DocumentStatus;
   fileUrl?: string;
+  filePath?: string;
   fileSize?: string;
   fileName?: string;
   rejectionReason?: string;
@@ -53,6 +57,7 @@ export interface Worker {
   id: string;
   name: string;
   cpfMasked: string; // e.g. ***.452.890-**
+  cpf?: string;
   role: string;
   contractorId: string;
   contractorName: string;
@@ -73,6 +78,7 @@ export interface Contractor {
   name: string;
   tradeName: string;
   cnpjMasked: string; // e.g. **.***.123/0001-**
+  cnpj?: string;
   responsibleName: string;
   responsibleEmail: string;
   responsiblePhone: string;
@@ -104,6 +110,7 @@ export interface WorkSite {
   complianceRate: number;
   criticalPendingCount: number;
   specificRequirements: string[];
+  activeContractorsCount?: number;
 }
 
 export interface AlertNotification {

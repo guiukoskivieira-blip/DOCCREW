@@ -15,12 +15,18 @@ import {
   FileCheck2,
   CheckCircle2,
   Eye,
+  Plus,
+  Printer,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { CreateSiteModal } from '../components/modals/CreateSiteModal';
+import { PrintReportModal } from '../components/reports/PrintReportModal';
 
 export const ObrasPage: React.FC = () => {
-  const { worksites, contractors, workers } = useDocuCrew();
+  const { worksites, contractors, workers, organizationName } = useDocuCrew();
   const [selectedSite, setSelectedSite] = useState<WorkSite | null>(null);
+  const [isCreateSiteOpen, setIsCreateSiteOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
 
   const getSiteWorkers = (siteId: string): Worker[] => {
     return workers.filter((w) => w.siteIds.includes(siteId));
@@ -46,8 +52,17 @@ export const ObrasPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 font-semibold">
-          {worksites.length} Contratos Ativos
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsCreateSiteOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs transition-colors flex items-center gap-1.5 shadow-xs"
+          >
+            <Plus className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+            Nova Obra ou Contrato
+          </button>
+          <div className="text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 font-semibold">
+            {worksites.length} Contratos Ativos
+          </div>
         </div>
       </div>
 
@@ -192,12 +207,22 @@ export const ObrasPage: React.FC = () => {
           subtitle={`${selectedSite.code} • Cliente: ${selectedSite.clientName}`}
           maxWidth="3xl"
           footer={
-            <button
-              onClick={() => setSelectedSite(null)}
-              className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-slate-200 hover:bg-slate-300 text-slate-800"
-            >
-              Fechar
-            </button>
+            <div className="flex items-center justify-between w-full">
+              <button
+                type="button"
+                onClick={() => setIsReportOpen(true)}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#061E2E] hover:bg-[#092B42] text-white flex items-center gap-1.5 shadow-xs transition-colors"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Imprimir Relatório da Obra (PDF)
+              </button>
+              <button
+                onClick={() => setSelectedSite(null)}
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-slate-200 hover:bg-slate-300 text-slate-800"
+              >
+                Fechar
+              </button>
+            </div>
           }
         >
           <div className="space-y-5 text-xs">
@@ -266,6 +291,26 @@ export const ObrasPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Create Site Modal */}
+      {isCreateSiteOpen && (
+        <CreateSiteModal
+          isOpen={isCreateSiteOpen}
+          onClose={() => setIsCreateSiteOpen(false)}
+        />
+      )}
+
+      {/* Site Operational Report Print Modal */}
+      {isReportOpen && selectedSite && (
+        <PrintReportModal
+          isOpen={isReportOpen}
+          onClose={() => setIsReportOpen(false)}
+          reportType="SITE_OPERATIONAL"
+          organizationName={organizationName}
+          workSite={selectedSite}
+          workers={workers}
+        />
       )}
     </div>
   );

@@ -16,7 +16,9 @@ import {
   ShieldAlert,
   ArrowRight,
   Filter,
+  Printer,
 } from 'lucide-react';
+import { PrintReportModal } from '../components/reports/PrintReportModal';
 
 export const AlertasPage: React.FC = () => {
   const {
@@ -26,12 +28,14 @@ export const AlertasPage: React.FC = () => {
     markAllAlertsAsRead,
     sendContractorNotification,
     contractors,
+    organizationName,
   } = useDocuCrew();
 
   const [activeTab, setActiveTab] = useState<'VENCIDOS' | 'PROXIMOS' | 'FALTANTES' | 'HISTORICO'>('VENCIDOS');
   const [selectedContractorForCobrança, setSelectedContractorForCobrança] = useState<string>('');
   const [showCobrarModal, setShowCobrarModal] = useState(false);
   const [cobrancaChannel, setCobrancaChannel] = useState<'EMAIL' | 'WHATSAPP' | 'PORTAL'>('WHATSAPP');
+  const [isReportOpen, setIsReportOpen] = useState(false);
 
   // Filter alerts by tab
   const vencidosAlerts = alerts.filter((a) => a.type === 'VENCIDO');
@@ -65,6 +69,14 @@ export const AlertasPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsReportOpen(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-[#061E2E] hover:bg-[#092B42] text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Imprimir Relatório (PDF)
+          </button>
           <button
             onClick={markAllAlertsAsRead}
             className="px-3 py-1.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -445,6 +457,17 @@ export const AlertasPage: React.FC = () => {
             </div>
           </form>
         </Modal>
+      )}
+
+      {/* Alerts Report Print Modal */}
+      {isReportOpen && (
+        <PrintReportModal
+          isOpen={isReportOpen}
+          onClose={() => setIsReportOpen(false)}
+          reportType="ALERTS_PENDING"
+          organizationName={organizationName}
+          alerts={alerts}
+        />
       )}
     </div>
   );

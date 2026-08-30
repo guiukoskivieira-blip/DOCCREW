@@ -20,17 +20,29 @@ import {
   AlertTriangle,
   XCircle,
   Download,
+  Plus,
+  Printer,
+  UploadCloud,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { CreateWorkerModal } from '../components/modals/CreateWorkerModal';
+import { UploadDocumentModal } from '../components/modals/UploadDocumentModal';
+import { PrintReportModal } from '../components/reports/PrintReportModal';
 
 export const TrabalhadoresPage: React.FC = () => {
-  const { workers, contractors, worksites, documents } = useDocuCrew();
+  const { workers, contractors, worksites, documents, organizationName } = useDocuCrew();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [contractorFilter, setContractorFilter] = useState<string>('ALL');
   const [siteFilter, setSiteFilter] = useState<string>('ALL');
   const [selectedWorker, setSelectedWorker] = useState<Worker | null>(null);
+
+  // Modals
+  const [isCreateWorkerOpen, setIsCreateWorkerOpen] = useState(false);
+  const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
+  const [uploadWorkerId, setUploadWorkerId] = useState<string | undefined>(undefined);
+  const [isProntuarioReportOpen, setIsProntuarioReportOpen] = useState(false);
 
   // Filtered workers list
   const filteredWorkers = useMemo(() => {
@@ -75,6 +87,13 @@ export const TrabalhadoresPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 text-xs">
+          <button
+            onClick={() => setIsCreateWorkerOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+          >
+            <Plus className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+            Novo Trabalhador
+          </button>
           <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">
             {workers.filter((w) => w.status === 'LIBERADO').length} Liberados
           </span>
@@ -275,12 +294,33 @@ export const TrabalhadoresPage: React.FC = () => {
                 <span className="text-xs text-slate-500 font-medium">Status no Acesso:</span>
                 <Badge status={selectedWorker.status} variant="worker" />
               </div>
-              <button
-                onClick={() => setSelectedWorker(null)}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-slate-200 hover:bg-slate-300 text-slate-800"
-              >
-                Fechar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadWorkerId(selectedWorker.id);
+                    setIsUploadDocOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 flex items-center gap-1 transition-colors"
+                >
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  Enviar Documento
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsProntuarioReportOpen(true)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#061E2E] text-white hover:bg-[#092B42] flex items-center gap-1 shadow-xs transition-colors"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Imprimir Prontuário (PDF)
+                </button>
+                <button
+                  onClick={() => setSelectedWorker(null)}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-slate-200 hover:bg-slate-300 text-slate-800"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
           }
         >
@@ -376,6 +416,38 @@ export const TrabalhadoresPage: React.FC = () => {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Create Worker Modal */}
+      {isCreateWorkerOpen && (
+        <CreateWorkerModal
+          isOpen={isCreateWorkerOpen}
+          onClose={() => setIsCreateWorkerOpen(false)}
+        />
+      )}
+
+      {/* Upload Document Modal */}
+      {isUploadDocOpen && (
+        <UploadDocumentModal
+          isOpen={isUploadDocOpen}
+          onClose={() => {
+            setIsUploadDocOpen(false);
+            setUploadWorkerId(undefined);
+          }}
+          defaultWorkerId={uploadWorkerId}
+        />
+      )}
+
+      {/* Worker Prontuario Print Modal */}
+      {isProntuarioReportOpen && selectedWorker && (
+        <PrintReportModal
+          isOpen={isProntuarioReportOpen}
+          onClose={() => setIsProntuarioReportOpen(false)}
+          reportType="WORKER_PRONTUARIO"
+          organizationName={organizationName}
+          worker={selectedWorker}
+          documents={documents}
+        />
       )}
     </div>
   );

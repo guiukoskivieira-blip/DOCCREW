@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useDocuCrew } from '../context/DocuCrewContext';
 import { StatCard } from '../components/common/StatCard';
 import { Badge } from '../components/common/Badge';
@@ -19,7 +19,16 @@ import {
   RefreshCw,
   Info,
   CheckCircle2,
+  Printer,
+  FileDown,
 } from 'lucide-react';
+import { QuickActionsMenu } from '../components/modals/QuickActionsMenu';
+import { UploadDocumentModal } from '../components/modals/UploadDocumentModal';
+import { CreateWorkerModal } from '../components/modals/CreateWorkerModal';
+import { CreateContractorModal } from '../components/modals/CreateContractorModal';
+import { CreateSiteModal } from '../components/modals/CreateSiteModal';
+import { CreateDocumentTypeModal } from '../components/modals/CreateDocumentTypeModal';
+import { PrintReportModal } from '../components/reports/PrintReportModal';
 
 export const DashboardPage: React.FC = () => {
   const {
@@ -38,6 +47,14 @@ export const DashboardPage: React.FC = () => {
     selectedContractorFilter,
     setSelectedContractorFilter,
   } = useDocuCrew();
+
+  // Modals state
+  const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
+  const [isNewWorkerOpen, setIsNewWorkerOpen] = useState(false);
+  const [isNewContractorOpen, setIsNewContractorOpen] = useState(false);
+  const [isNewSiteOpen, setIsNewSiteOpen] = useState(false);
+  const [isNewDocTypeOpen, setIsNewDocTypeOpen] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
 
   // Filtered workers based on global dashboard selectors
   const filteredWorkers = useMemo(() => {
@@ -216,6 +233,25 @@ export const DashboardPage: React.FC = () => {
               </button>
             </div>
           )}
+
+          {/* Quick Actions & Reports */}
+          <div className="flex items-center gap-2 self-end">
+            <button
+              onClick={() => setIsReportOpen(true)}
+              className="px-3.5 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs"
+            >
+              <Printer className="w-3.5 h-3.5 text-slate-600" />
+              <span>Exportar Relatório</span>
+            </button>
+
+            <QuickActionsMenu
+              onOpenUploadDoc={() => setIsUploadDocOpen(true)}
+              onOpenNewWorker={() => setIsNewWorkerOpen(true)}
+              onOpenNewContractor={() => setIsNewContractorOpen(true)}
+              onOpenNewSite={() => setIsNewSiteOpen(true)}
+              onOpenNewDocType={() => setIsNewDocTypeOpen(true)}
+            />
+          </div>
         </div>
       </div>
 
@@ -511,6 +547,57 @@ export const DashboardPage: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {/* Action Modals */}
+      {isUploadDocOpen && (
+        <UploadDocumentModal
+          isOpen={isUploadDocOpen}
+          onClose={() => setIsUploadDocOpen(false)}
+        />
+      )}
+
+      {isNewWorkerOpen && (
+        <CreateWorkerModal
+          isOpen={isNewWorkerOpen}
+          onClose={() => setIsNewWorkerOpen(false)}
+        />
+      )}
+
+      {isNewContractorOpen && (
+        <CreateContractorModal
+          isOpen={isNewContractorOpen}
+          onClose={() => setIsNewContractorOpen(false)}
+        />
+      )}
+
+      {isNewSiteOpen && (
+        <CreateSiteModal
+          isOpen={isNewSiteOpen}
+          onClose={() => setIsNewSiteOpen(false)}
+        />
+      )}
+
+      {isNewDocTypeOpen && (
+        <CreateDocumentTypeModal
+          isOpen={isNewDocTypeOpen}
+          onClose={() => setIsNewDocTypeOpen(false)}
+        />
+      )}
+
+      {isReportOpen && (
+        <PrintReportModal
+          isOpen={isReportOpen}
+          onClose={() => setIsReportOpen(false)}
+          reportType="DASHBOARD_EXECUTIVE"
+          organizationName={organizationName}
+          workers={filteredWorkers}
+          contractors={contractors}
+          worksites={worksites}
+          documents={filteredDocuments}
+          alerts={alerts}
+          indicators={indicators}
+        />
+      )}
     </div>
   );
 };

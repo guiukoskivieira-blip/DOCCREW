@@ -34,6 +34,21 @@ import {
   fetchUserOrganization,
   loadSupabaseDashboardData,
 } from '../services/supabaseDataService';
+import {
+  createContractor,
+  createWorker,
+  createSite,
+  createDocumentType,
+  updateDocumentType,
+  uploadWorkerDocument,
+  getDocumentDownloadUrl,
+  updateOrganizationProfile,
+  CreateContractorPayload,
+  CreateWorkerPayload,
+  CreateSitePayload,
+  CreateDocumentTypePayload,
+  UploadWorkerDocumentPayload,
+} from '../services/supabaseMutationService';
 
 export interface ToastMessage {
   id: string;
@@ -61,6 +76,7 @@ interface DocuCrewContextType {
   users: SystemUser[];
 
   // Organization & Supabase State
+  organizationId: string | null;
   organizationName: string;
   dataLoadingState: DataLoadingState;
   dataError: string | null;
@@ -89,6 +105,16 @@ interface DocuCrewContextType {
   ) => void;
   markAlertAsRead: (alertId: string) => void;
   markAllAlertsAsRead: () => void;
+
+  // New Mutation Actions
+  addContractor: (payload: CreateContractorPayload) => Promise<{ success: boolean; error?: string }>;
+  addWorker: (payload: CreateWorkerPayload) => Promise<{ success: boolean; error?: string }>;
+  addSite: (payload: CreateSitePayload) => Promise<{ success: boolean; error?: string }>;
+  addDocumentType: (payload: CreateDocumentTypePayload) => Promise<{ success: boolean; error?: string }>;
+  editDocumentType: (docTypeId: string, payload: Partial<CreateDocumentTypePayload>) => Promise<{ success: boolean; error?: string }>;
+  uploadDocument: (file: File, payload: UploadWorkerDocumentPayload) => Promise<{ success: boolean; error?: string }>;
+  downloadDocumentFile: (filePath?: string) => Promise<{ success: boolean; url?: string; error?: string }>;
+  updateOrgProfile: (payload: { name: string; slug?: string }) => Promise<{ success: boolean; error?: string }>;
 }
 
 const DocuCrewContext = createContext<DocuCrewContextType | undefined>(undefined);
@@ -110,6 +136,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [users] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
 
   // Organization & Loading state
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [organizationName, setOrganizationName] = useState<string>('DocuCrew Demonstração');
   const [dataLoadingState, setDataLoadingState] = useState<DataLoadingState>('SUCCESS');
   const [dataError, setDataError] = useState<string | null>(null);
@@ -165,6 +192,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     const supabase = getSupabaseClient();
     if (!isConfigured || !supabase || !user) {
       // Revert to demo mode gracefully
+      setOrganizationId(null);
       setOrganizationName('DocuCrew Demonstração');
       setContractors(INITIAL_CONTRACTORS);
       setWorksites(INITIAL_WORKSITES);
@@ -192,12 +220,14 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
 
       if (!orgResult.found || !orgResult.organizationId) {
+        setOrganizationId(null);
         setOrganizationName(orgResult.organizationName || 'DocuCrew Demonstração');
         setDataLoadingState('ORG_NOT_FOUND');
         setIsUsingSupabaseData(false);
         return;
       }
 
+      setOrganizationId(orgResult.organizationId);
       setOrganizationName(orgResult.organizationName);
 
       // 2. Fetch Operational Database Tables for the organization
@@ -255,6 +285,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       loadDataFromSupabase();
     } else {
       // Demo mode fallback
+      setOrganizationId(null);
       setOrganizationName('DocuCrew Demonstração');
       setContractors(INITIAL_CONTRACTORS);
       setWorksites(INITIAL_WORKSITES);
@@ -449,6 +480,278 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     showToast('Alertas Atualizados', 'Todos os alertas foram marcados como lidos.', 'info');
   };
 
+  // 1. Add Contractor
+  const addContractor = async (payload: CreateContractorPayload): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await createContractor(supabase, organizationId, payload);
+      if (!result.success) {
+        showToast('Erro ao cadastrar empresa', result.error || 'Falha ao salvar', 'error');
+        return { success: false, error: result.error };
+      }
+      await loadDataFromSupabase();
+      showToast('Empresa Cadastrada', `${payload.tradeName} adicionada com sucesso.`, 'success');
+      return { success: true };
+    }
+
+    // Demo Mode fallback
+    const newContractor: Contractor = {
+      id: `c-demo-${Date.now()}`,
+      name: payload.name,
+      tradeName: payload.tradeName,
+      cnpj: payload.cnpj,
+      cnpjMasked: payload.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5'),
+      responsibleName: payload.responsibleName,
+      responsibleEmail: payload.responsibleEmail,
+      responsiblePhone: payload.responsiblePhone,
+      status: payload.status || 'PARCIAL',
+      complianceRate: 50,
+      totalWorkers: 0,
+      activeWorkers: 0,
+      blockedWorkers: 0,
+      pendingDocumentsCount: 0,
+      siteIds: [],
+      corporateDocumentsCount: {
+        valid: 0,
+        pending: 0,
+      },
+    };
+    setContractors((prev) => [newContractor, ...prev]);
+    showToast('Empresa Cadastrada', `${payload.tradeName} cadastrada (Demonstração).`, 'success');
+    return { success: true };
+  };
+
+  // 2. Add Worker
+  const addWorker = async (payload: CreateWorkerPayload): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await createWorker(supabase, organizationId, payload);
+      if (!result.success) {
+        showToast('Erro ao cadastrar trabalhador', result.error || 'Falha ao salvar', 'error');
+        return { success: false, error: result.error };
+      }
+      await loadDataFromSupabase();
+      showToast('Trabalhador Cadastrado', `${payload.name} cadastrado com status inicial BLOQUEADO.`, 'success');
+      return { success: true };
+    }
+
+    // Demo Mode fallback
+    const contractor = contractors.find((c) => c.id === payload.contractorId);
+    const maskedCpf = payload.cpf ? payload.cpf.replace(/(\d{3})\.?(\d{3})\.?(\d{3})-?(\d{2})/, '$1.***.***-$4') : '000.***.***-00';
+    const initials = payload.name
+      .split(' ')
+      .slice(0, 2)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase();
+
+    const newWorker: Worker = {
+      id: `w-demo-${Date.now()}`,
+      name: payload.name,
+      cpf: payload.cpf,
+      cpfMasked: maskedCpf,
+      role: payload.role,
+      contractorId: payload.contractorId,
+      contractorName: contractor?.tradeName || 'Terceirizada',
+      siteIds: payload.siteId ? [payload.siteId] : [],
+      status: 'BLOQUEADO',
+      blockReason: 'Documentação admissional pendente de envio e aprovação',
+      approvedDocumentsCount: 0,
+      underReviewDocumentsCount: 0,
+      pendingDocumentsCount: 4,
+      expiredDocumentsCount: 0,
+      totalRequiredDocuments: 4,
+      avatarInitials: initials || 'TR',
+      admissionDate: payload.admissionDate || new Date().toISOString().split('T')[0],
+    };
+    setWorkers((prev) => [newWorker, ...prev]);
+    showToast('Trabalhador Cadastrado', `${payload.name} cadastrado com status inicial BLOQUEADO.`, 'success');
+    return { success: true };
+  };
+
+  // 3. Add Site / Contract
+  const addSite = async (payload: CreateSitePayload): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await createSite(supabase, organizationId, payload);
+      if (!result.success) {
+        showToast('Erro ao cadastrar obra', result.error || 'Falha ao salvar', 'error');
+        return { success: false, error: result.error };
+      }
+      await loadDataFromSupabase();
+      showToast('Obra / Contrato Criado', `${payload.name} cadastrado com sucesso.`, 'success');
+      return { success: true };
+    }
+
+    // Demo Mode fallback
+    const newSite: WorkSite = {
+      id: `s-demo-${Date.now()}`,
+      code: payload.code.toUpperCase(),
+      name: payload.name,
+      clientName: payload.clientName,
+      location: payload.location,
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+      totalWorkers: 0,
+      releasedWorkers: 0,
+      blockedWorkers: 0,
+      complianceRate: 100,
+      criticalPendingCount: 0,
+      specificRequirements: ['ASO Admissional', 'NR-01 Ordem de Serviço'],
+      contractorIds: [],
+    };
+    setWorksites((prev) => [newSite, ...prev]);
+    showToast('Obra / Contrato Criado', `${payload.name} cadastrado (Demonstração).`, 'success');
+    return { success: true };
+  };
+
+  // 4. Add Document Type
+  const addDocumentType = async (payload: CreateDocumentTypePayload): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await createDocumentType(supabase, organizationId, payload);
+      if (!result.success) {
+        showToast('Erro ao criar tipo de documento', result.error || 'Falha ao salvar', 'error');
+        return { success: false, error: result.error };
+      }
+      await loadDataFromSupabase();
+      showToast('Tipo de Documento Criado', `${payload.name} adicionado à matriz de requisitos.`, 'success');
+      return { success: true };
+    }
+
+    // Demo Mode fallback
+    const newDocType: DocumentTypeDefinition = {
+      id: `dt-demo-${Date.now()}`,
+      code: payload.name.toUpperCase().replace(/\s+/g, '_'),
+      name: payload.name,
+      category: payload.category,
+      description: payload.description || '',
+      validityMonths: payload.hasExpiration ? (payload.validityMonths || 12) : null,
+      isActive: payload.isActive ?? true,
+      isMandatory: payload.isMandatory,
+      requiredForRoles: payload.roleId ? [payload.roleId] : ['*'],
+    };
+    setDocumentTypes((prev) => [...prev, newDocType]);
+    showToast('Tipo de Documento Criado', `${payload.name} adicionado (Demonstração).`, 'success');
+    return { success: true };
+  };
+
+  // 5. Edit Document Type
+  const editDocumentType = async (docTypeId: string, payload: Partial<CreateDocumentTypePayload>): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await updateDocumentType(supabase, organizationId, docTypeId, payload);
+      if (!result.success) {
+        showToast('Erro ao atualizar tipo', result.error || 'Falha ao atualizar', 'error');
+        return { success: false, error: result.error };
+      }
+      await loadDataFromSupabase();
+      showToast('Tipo de Documento Atualizado', 'Alterações gravadas com sucesso.', 'success');
+      return { success: true };
+    }
+
+    // Demo Mode fallback
+    setDocumentTypes((prev) =>
+      prev.map((dt) => {
+        if (dt.id === docTypeId) {
+          return {
+            ...dt,
+            name: payload.name || dt.name,
+            category: payload.category || dt.category,
+            description: payload.description !== undefined ? payload.description : dt.description,
+            validityDays: payload.hasExpiration !== undefined ? (payload.hasExpiration ? (payload.validityMonths || 12) * 30 : null) : dt.validityDays,
+            isMandatory: payload.isMandatory !== undefined ? payload.isMandatory : dt.isMandatory,
+            isActive: payload.isActive !== undefined ? payload.isActive : dt.isActive,
+          };
+        }
+        return dt;
+      })
+    );
+    showToast('Tipo de Documento Atualizado', 'Alterações salvas.', 'success');
+    return { success: true };
+  };
+
+  // 6. Upload Worker Document
+  const uploadDocument = async (file: File, payload: UploadWorkerDocumentPayload): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await uploadWorkerDocument(supabase, organizationId, file, payload);
+      if (!result.success) {
+        showToast('Falha no Envio do Documento', result.error || 'Erro no processamento', 'error');
+        return { success: false, error: result.error };
+      }
+      await loadDataFromSupabase();
+      showToast('Documento Enviado', 'Arquivo recebido com sucesso e enviado para fila de análise.', 'success');
+      return { success: true };
+    }
+
+    // Demo Mode fallback
+    const worker = workers.find((w) => w.id === payload.workerId);
+    const contractor = contractors.find((c) => c.id === payload.contractorId);
+    const docType = documentTypes.find((dt) => dt.id === payload.documentTypeId);
+    const site = worksites.find((s) => s.id === payload.siteId);
+
+    const newDoc: WorkerDocument = {
+      id: `doc-demo-${Date.now()}`,
+      workerId: payload.workerId,
+      workerName: worker?.name || 'Trabalhador',
+      contractorId: payload.contractorId,
+      contractorName: contractor?.tradeName || 'Terceirizada',
+      siteId: payload.siteId || 'site-1',
+      siteName: site?.name || 'Geral',
+      documentTypeId: payload.documentTypeId,
+      documentTypeName: docType?.name || 'Documento Anexado',
+      category: docType?.category || 'SEGURANCA',
+      status: 'AGUARDANDO_ANALISE',
+      issueDate: payload.issueDate,
+      expiryDate: payload.expiryDate || null,
+      fileName: file.name,
+      fileSize: `${(file.size / 1024).toFixed(0)} KB`,
+      reviewedBy: undefined,
+      reviewedAt: undefined,
+    };
+
+    setDocuments((prevDocs) => {
+      const updated = [newDoc, ...prevDocs];
+      recalculateWorkerState(payload.workerId, updated);
+      return updated;
+    });
+
+    showToast('Documento Enviado', `${file.name} enviado para análise (Demonstração).`, 'success');
+    return { success: true };
+  };
+
+  // 7. Download / Signed URL
+  const downloadDocumentFile = async (filePath?: string): Promise<{ success: boolean; url?: string; error?: string }> => {
+    if (!filePath) {
+      return { success: false, error: 'Arquivo demonstrativo não disponível' };
+    }
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && supabase) {
+      return await getDocumentDownloadUrl(supabase, filePath);
+    }
+    return { success: false, error: 'Download disponível apenas para documentos reais anexados no Supabase Storage.' };
+  };
+
+  // 8. Update Organization Profile
+  const updateOrgProfile = async (payload: { name: string; slug?: string }): Promise<{ success: boolean; error?: string }> => {
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && organizationId && supabase) {
+      const result = await updateOrganizationProfile(supabase, organizationId, payload);
+      if (!result.success) {
+        showToast('Erro ao atualizar empresa', result.error || 'Falha ao salvar', 'error');
+        return { success: false, error: result.error };
+      }
+      setOrganizationName(payload.name);
+      showToast('Perfil Atualizado', 'Dados da empresa atualizados com sucesso.', 'success');
+      return { success: true };
+    }
+
+    setOrganizationName(payload.name);
+    showToast('Perfil Atualizado', 'Dados da organização alterados (Demonstração).', 'success');
+    return { success: true };
+  };
+
   return (
     <DocuCrewContext.Provider
       value={{
@@ -460,6 +763,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         notificationLogs,
         documentTypes,
         users,
+        organizationId,
         organizationName,
         dataLoadingState,
         dataError,
@@ -478,6 +782,14 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         sendContractorNotification,
         markAlertAsRead,
         markAllAlertsAsRead,
+        addContractor,
+        addWorker,
+        addSite,
+        addDocumentType,
+        editDocumentType,
+        uploadDocument,
+        downloadDocumentFile,
+        updateOrgProfile,
       }}
     >
       {children}
