@@ -72,42 +72,42 @@ export const TerceirizadasPage: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
       {/* Header Banner */}
-      <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl p-5 border border-[#DCE4EC] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <Building2 className="w-5 h-5 text-blue-600" />
+          <h2 className="text-lg font-bold text-[#102033] flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-[#061E2E]" />
             Empresas Prestadoras Terceirizadas
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-[#587087] mt-0.5">
             Monitoramento de conformidade jurídica, técnica e de segurança de empresas parceiras
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+        <div className="flex items-center gap-2 text-xs text-[#102033] bg-[#F5F7FA] px-3.5 py-1.5 rounded-xl border border-[#DCE4EC]">
           <span className="font-semibold">Total cadastradas:</span>
-          <span className="font-bold text-slate-900">{contractors.length} empresas</span>
+          <span className="font-extrabold text-[#061E2E]">{contractors.length} empresas</span>
         </div>
       </div>
 
       {/* Search & Filter Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white rounded-2xl p-4 border border-[#DCE4EC] shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="relative w-full sm:w-96">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <Search className="w-4 h-4 text-[#587087] absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Buscar por razão social, nome fantasia, responsável ou CNPJ..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-colors"
+            className="w-full pl-9 pr-4 py-2 text-xs bg-[#F5F7FA] border border-[#DCE4EC] rounded-xl text-[#102033] placeholder-[#587087] focus:ring-2 focus:ring-[#061E2E] focus:outline-none transition-colors"
           />
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400" />
+          <Filter className="w-4 h-4 text-[#587087]" />
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="text-xs font-semibold bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-none transition-colors w-full sm:w-auto"
+            className="text-xs font-semibold bg-[#F5F7FA] border border-[#DCE4EC] rounded-xl px-3 py-2 text-[#102033] focus:ring-2 focus:ring-[#061E2E] focus:outline-none transition-colors w-full sm:w-auto"
           >
             <option value="ALL">Todas as Situações</option>
             <option value="CONFORME">Conforme (100%)</option>
@@ -118,7 +118,7 @@ export const TerceirizadasPage: React.FC = () => {
       </div>
 
       {/* Contractors Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-[#DCE4EC] shadow-xs overflow-hidden">
         {filteredContractors.length === 0 ? (
           <EmptyState
             icon={Building2}
@@ -134,7 +134,7 @@ export const TerceirizadasPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-100/70 text-slate-600 font-semibold uppercase tracking-wider text-[11px]">
+                <tr className="border-b border-[#DCE4EC] bg-[#F5F7FA] text-[#587087] font-bold uppercase tracking-wider text-[11px]">
                   <th className="py-3.5 px-4">Empresa / CNPJ</th>
                   <th className="py-3.5 px-4">Responsável & Contato</th>
                   <th className="py-3.5 px-4 text-center">Trabalhadores</th>
@@ -144,19 +144,19 @@ export const TerceirizadasPage: React.FC = () => {
                   <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
+              <tbody className="divide-y divide-[#DCE4EC]/70 text-[#102033]">
                 {filteredContractors.map((c) => {
                   const contractorWorkers = getContractorWorkers(c.id);
                   const activeCount = contractorWorkers.filter((w) => w.status === 'LIBERADO').length;
                   const blockedCount = contractorWorkers.filter((w) => w.status === 'BLOQUEADO').length;
 
                   return (
-                    <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
+                    <tr key={c.id} className="hover:bg-[#F5F7FA]/80 transition-colors">
                       <td className="py-4 px-4">
                         <div>
-                          <p className="font-bold text-slate-900 text-sm">{c.tradeName}</p>
-                          <p className="text-slate-500 text-[11px] truncate max-w-xs">{c.name}</p>
-                          <span className="inline-block font-mono text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded mt-0.5">
+                          <p className="font-bold text-[#102033] text-sm">{c.tradeName}</p>
+                          <p className="text-[#587087] text-[11px] truncate max-w-xs">{c.name}</p>
+                          <span className="inline-block font-mono text-[10px] text-[#587087] bg-[#F5F7FA] px-1.5 py-0.5 rounded border border-[#DCE4EC] mt-0.5">
                             CNPJ: {c.cnpjMasked}
                           </span>
                         </div>
@@ -164,13 +164,13 @@ export const TerceirizadasPage: React.FC = () => {
 
                       <td className="py-4 px-4">
                         <div className="space-y-0.5">
-                          <p className="font-semibold text-slate-900">{c.responsibleName}</p>
-                          <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                            <Mail className="w-3 h-3 text-slate-400" />
+                          <p className="font-semibold text-[#102033]">{c.responsibleName}</p>
+                          <p className="text-[11px] text-[#587087] flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-[#587087]" />
                             {c.responsibleEmail}
                           </p>
-                          <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                            <Phone className="w-3 h-3 text-slate-400" />
+                          <p className="text-[11px] text-[#587087] flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-[#587087]" />
                             {c.responsiblePhone}
                           </p>
                         </div>
@@ -178,23 +178,23 @@ export const TerceirizadasPage: React.FC = () => {
 
                       <td className="py-4 px-4 text-center">
                         <div className="inline-flex flex-col items-center">
-                          <span className="font-bold text-slate-900 text-sm">{c.totalWorkers}</span>
-                          <span className="text-[10px] text-slate-500">
-                            <span className="text-emerald-600 font-semibold">{activeCount} aptos</span> /{' '}
-                            <span className="text-rose-600 font-semibold">{blockedCount} blq</span>
+                          <span className="font-bold text-[#102033] text-sm">{c.totalWorkers}</span>
+                          <span className="text-[10px] text-[#587087]">
+                            <span className="text-[#00A878] font-bold">{activeCount} aptos</span> /{' '}
+                            <span className="text-[#E9304F] font-bold">{blockedCount} blq</span>
                           </span>
                         </div>
                       </td>
 
                       <td className="py-4 px-4 text-center">
                         {c.pendingDocumentsCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200 text-xs">
-                            <AlertTriangle className="w-3 h-3 text-rose-600" />
+                          <span className="inline-flex items-center gap-1 font-bold text-[#E9304F] bg-[#E9304F]/10 px-2.5 py-0.5 rounded-full border border-[#E9304F]/30 text-xs">
+                            <AlertTriangle className="w-3 h-3 text-[#E9304F]" />
                             {c.pendingDocumentsCount} pendentes
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-xs">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span className="inline-flex items-center gap-1 font-bold text-[#00A878] bg-[#00A878]/10 px-2.5 py-0.5 rounded-full border border-[#00A878]/30 text-xs">
+                            <CheckCircle2 className="w-3 h-3 text-[#00A878]" />
                             Zero pendências
                           </span>
                         )}
@@ -205,10 +205,10 @@ export const TerceirizadasPage: React.FC = () => {
                           <span
                             className={`font-bold font-mono text-sm ${
                               c.complianceRate >= 75
-                                ? 'text-emerald-600'
+                                ? 'text-[#00A878]'
                                 : c.complianceRate >= 50
-                                ? 'text-amber-600'
-                                : 'text-rose-600'
+                                ? 'text-[#D97706]'
+                                : 'text-[#E9304F]'
                             }`}
                           >
                             {c.complianceRate}%
@@ -217,10 +217,10 @@ export const TerceirizadasPage: React.FC = () => {
                             <div
                               className={`h-1.5 rounded-full ${
                                 c.complianceRate >= 75
-                                  ? 'bg-emerald-500'
+                                  ? 'bg-[#00A878]'
                                   : c.complianceRate >= 50
-                                  ? 'bg-amber-500'
-                                  : 'bg-rose-500'
+                                  ? 'bg-[#FFC400]'
+                                  : 'bg-[#E9304F]'
                               }`}
                               style={{ width: `${c.complianceRate}%` }}
                             />
@@ -236,16 +236,16 @@ export const TerceirizadasPage: React.FC = () => {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => setSelectedContractor(c)}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors"
+                            className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-[#F5F7FA] hover:bg-[#E5EBF2] text-[#102033] border border-[#DCE4EC] transition-colors"
                           >
                             Ver Ficha
                           </button>
                           <button
                             onClick={() => handleOpenNotify(c)}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors flex items-center gap-1"
+                            className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-[#061E2E] hover:bg-[#0B2A3F] text-white transition-colors flex items-center gap-1 shadow-xs"
                             title="Disparar cobrança documental"
                           >
-                            <Send className="w-3 h-3" />
+                            <Send className="w-3 h-3 text-[#FFC400]" />
                             Cobrar
                           </button>
                         </div>

@@ -1,11 +1,89 @@
 @import "tailwindcss";
 
 @layer base {
+  :root {
+    --brand-navy: #061E2E;
+    --brand-navy-light: #0B2A3F;
+    --brand-yellow: #FFC400;
+    --brand-yellow-hover: #EAAF00;
+    --background: #F5F7FA;
+    --surface: #FFFFFF;
+    --border: #DCE4EC;
+    --text-primary: #102033;
+    --text-secondary: #587087;
+    --success: #00A878;
+    --danger: #E9304F;
+    --warning: #F59E0B;
+    --info: #1473E6;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #0f172a;
-    background-color: #f8fafc;
+    color: #102033;
+    background-color: #F5F7FA;
+    -webkit-font-smoothing: antialiased;
   }
+}
+
+/* Brand Utility Classes for Clean B2B Styling */
+.bg-brand-navy {
+  background-color: #061E2E;
+}
+
+.bg-brand-navy-light {
+  background-color: #0B2A3F;
+}
+
+.bg-brand-navy-subtle {
+  background-color: #0d344d;
+}
+
+.bg-brand-yellow {
+  background-color: #FFC400;
+}
+
+.bg-brand-yellow-hover:hover {
+  background-color: #EAAF00;
+}
+
+.text-brand-yellow {
+  color: #FFC400;
+}
+
+.text-brand-navy {
+  color: #061E2E;
+}
+
+.border-brand-navy {
+  border-color: #061E2E;
+}
+
+.border-brand-navy-light {
+  border-color: #0B2A3F;
+}
+
+.border-brand-yellow {
+  border-color: #FFC400;
+}
+
+.bg-surface {
+  background-color: #FFFFFF;
+}
+
+.bg-app-bg {
+  background-color: #F5F7FA;
+}
+
+.border-app {
+  border-color: #DCE4EC;
+}
+
+.text-primary-app {
+  color: #102033;
+}
+
+.text-secondary-app {
+  color: #587087;
 }
 
 /* Subtle scrollbars */
@@ -17,9 +95,10 @@
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(88, 112, 135, 0.25);
   border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.7);
+  background: rgba(88, 112, 135, 0.45);
 }
+

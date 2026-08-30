@@ -26,38 +26,38 @@ export const StatCard: React.FC<StatCardProps> = ({
     switch (variant) {
       case 'success':
         return {
-          iconBg: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-          accent: 'text-emerald-700',
-          activeRing: isActive ? 'ring-2 ring-emerald-500 border-emerald-400' : 'border-slate-200/80',
-          glow: 'hover:border-emerald-300',
+          iconBg: 'bg-[#00A878]/10 text-[#00A878] border-[#00A878]/25',
+          accent: 'text-[#00A878]',
+          activeRing: isActive ? 'ring-2 ring-[#00A878] border-[#00A878]' : 'border-[#DCE4EC]',
+          glow: 'hover:border-[#00A878]/50',
         };
       case 'danger':
         return {
-          iconBg: 'bg-rose-50 text-rose-600 border-rose-100',
-          accent: 'text-rose-700',
-          activeRing: isActive ? 'ring-2 ring-rose-500 border-rose-400' : 'border-slate-200/80',
-          glow: 'hover:border-rose-300',
+          iconBg: 'bg-[#E9304F]/10 text-[#E9304F] border-[#E9304F]/25',
+          accent: 'text-[#E9304F]',
+          activeRing: isActive ? 'ring-2 ring-[#E9304F] border-[#E9304F]' : 'border-[#DCE4EC]',
+          glow: 'hover:border-[#E9304F]/50',
         };
       case 'warning':
         return {
-          iconBg: 'bg-amber-50 text-amber-600 border-amber-100',
-          accent: 'text-amber-700',
-          activeRing: isActive ? 'ring-2 ring-amber-500 border-amber-400' : 'border-slate-200/80',
-          glow: 'hover:border-amber-300',
+          iconBg: 'bg-[#FFC400]/15 text-[#B45309] border-[#FFC400]/30',
+          accent: 'text-[#B45309]',
+          activeRing: isActive ? 'ring-2 ring-[#FFC400] border-[#FFC400]' : 'border-[#DCE4EC]',
+          glow: 'hover:border-[#FFC400]/50',
         };
       case 'info':
         return {
-          iconBg: 'bg-blue-50 text-blue-600 border-blue-100',
-          accent: 'text-blue-700',
-          activeRing: isActive ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-200/80',
-          glow: 'hover:border-blue-300',
+          iconBg: 'bg-[#1473E6]/10 text-[#1473E6] border-[#1473E6]/25',
+          accent: 'text-[#1473E6]',
+          activeRing: isActive ? 'ring-2 ring-[#1473E6] border-[#1473E6]' : 'border-[#DCE4EC]',
+          glow: 'hover:border-[#1473E6]/50',
         };
       default:
         return {
-          iconBg: 'bg-slate-100 text-slate-700 border-slate-200',
-          accent: 'text-slate-900',
-          activeRing: isActive ? 'ring-2 ring-slate-800 border-slate-600' : 'border-slate-200/80',
-          glow: 'hover:border-slate-300',
+          iconBg: 'bg-[#F5F7FA] text-[#061E2E] border-[#DCE4EC]',
+          accent: 'text-[#102033]',
+          activeRing: isActive ? 'ring-2 ring-[#061E2E] border-[#061E2E]' : 'border-[#DCE4EC]',
+          glow: 'hover:border-[#061E2E]/30',
         };
     }
   };
@@ -73,21 +73,21 @@ export const StatCard: React.FC<StatCardProps> = ({
     >
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{title}</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-[#587087]">{title}</p>
           <div className="mt-2 flex items-baseline gap-2">
             <span className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${theme.accent}`}>
               {value}
             </span>
             {badge && (
-              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#F5F7FA] text-[#587087] border border-[#DCE4EC]">
                 {badge}
               </span>
             )}
           </div>
-          {subtitle && <p className="mt-1 text-xs text-slate-500 line-clamp-1">{subtitle}</p>}
+          {subtitle && <p className="mt-1 text-xs text-[#587087] line-clamp-1">{subtitle}</p>}
         </div>
 
-        <div className={`p-3 rounded-lg border ${theme.iconBg}`}>
+        <div className={`p-3 rounded-xl border ${theme.iconBg}`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>

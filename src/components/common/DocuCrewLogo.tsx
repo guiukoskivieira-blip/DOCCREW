@@ -26,9 +26,9 @@ export const DocuCrewIcon: React.FC<{
   const isDarkBg = variant === 'dark';
   const isYellowBg = variant === 'yellow';
 
-  const bodyColor = isDarkBg ? '#FFFFFF' : '#14181F';
-  const yellowColor = isYellowBg ? '#14181F' : '#F59E0B';
-  const nodeLineColor = isDarkBg ? '#FFFFFF' : '#14181F';
+  const bodyColor = isDarkBg ? '#FFFFFF' : '#061E2E';
+  const yellowColor = isYellowBg ? '#061E2E' : '#FFC400';
+  const nodeLineColor = isDarkBg ? '#FFFFFF' : '#061E2E';
 
   return (
     <svg
@@ -41,7 +41,7 @@ export const DocuCrewIcon: React.FC<{
     >
       {/* Background shape if yellow variant */}
       {isYellowBg && (
-        <rect width="100" height="100" rx="22" fill="#F59E0B" />
+        <rect width="100" height="100" rx="22" fill="#FFC400" />
       )}
 
       {/* Main D Outer Body & Cutout */}

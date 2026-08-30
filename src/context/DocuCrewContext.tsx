@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useState, useMemo, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+} from 'react';
 import {
   Contractor,
   WorkSite,
@@ -21,6 +28,12 @@ import {
   INITIAL_SYSTEM_USERS,
 } from '../data/mockData';
 import { evaluateWorkerCompliance } from '../domain/workerCompliance';
+import { useAuth } from './AuthContext';
+import { getSupabaseClient } from '../lib/supabaseClient';
+import {
+  fetchUserOrganization,
+  loadSupabaseDashboardData,
+} from '../services/supabaseDataService';
 
 export interface ToastMessage {
   id: string;
@@ -28,6 +41,14 @@ export interface ToastMessage {
   message: string;
   type: 'success' | 'warning' | 'error' | 'info';
 }
+
+export type DataLoadingState =
+  | 'IDLE'
+  | 'LOADING'
+  | 'SUCCESS'
+  | 'ERROR'
+  | 'ORG_NOT_FOUND'
+  | 'EMPTY';
 
 interface DocuCrewContextType {
   contractors: Contractor[];
@@ -38,23 +59,34 @@ interface DocuCrewContextType {
   notificationLogs: NotificationHistoryLog[];
   documentTypes: DocumentTypeDefinition[];
   users: SystemUser[];
-  
+
+  // Organization & Supabase State
+  organizationName: string;
+  dataLoadingState: DataLoadingState;
+  dataError: string | null;
+  isUsingSupabaseData: boolean;
+  reloadSupabaseData: () => Promise<void>;
+
   // Global Filters for Dashboard
   selectedSiteFilter: string; // 'ALL' or siteId
   setSelectedSiteFilter: (siteId: string) => void;
   selectedContractorFilter: string; // 'ALL' or contractorId
   setSelectedContractorFilter: (contractorId: string) => void;
-  
+
   // Toast notifications
   toasts: ToastMessage[];
   showToast: (title: string, message: string, type?: ToastMessage['type']) => void;
   removeToast: (id: string) => void;
-  
+
   // Actions
   approveDocument: (documentId: string, reviewedBy?: string) => void;
   rejectDocument: (documentId: string, reason: string, reviewedBy?: string) => void;
   requestCorrection: (documentId: string, notes: string, reviewedBy?: string) => void;
-  sendContractorNotification: (contractorId: string, channel: 'WHATSAPP' | 'EMAIL' | 'PORTAL', subject: string) => void;
+  sendContractorNotification: (
+    contractorId: string,
+    channel: 'WHATSAPP' | 'EMAIL' | 'PORTAL',
+    subject: string
+  ) => void;
   markAlertAsRead: (alertId: string) => void;
   markAllAlertsAsRead: () => void;
 }
@@ -62,21 +94,37 @@ interface DocuCrewContextType {
 const DocuCrewContext = createContext<DocuCrewContextType | undefined>(undefined);
 
 export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { user, authMode, isConfigured } = useAuth();
+
   const [contractors, setContractors] = useState<Contractor[]>(INITIAL_CONTRACTORS);
   const [worksites, setWorksites] = useState<WorkSite[]>(INITIAL_WORKSITES);
   const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
   const [documents, setDocuments] = useState<WorkerDocument[]>(INITIAL_DOCUMENTS);
   const [alerts, setAlerts] = useState<AlertNotification[]>(INITIAL_ALERTS);
-  const [notificationLogs, setNotificationLogs] = useState<NotificationHistoryLog[]>(INITIAL_NOTIFICATION_LOGS);
-  const [documentTypes] = useState<DocumentTypeDefinition[]>(INITIAL_DOCUMENT_TYPES);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationHistoryLog[]>(
+    INITIAL_NOTIFICATION_LOGS
+  );
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>(
+    INITIAL_DOCUMENT_TYPES
+  );
   const [users] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
+
+  // Organization & Loading state
+  const [organizationName, setOrganizationName] = useState<string>('DocuCrew Demonstração');
+  const [dataLoadingState, setDataLoadingState] = useState<DataLoadingState>('SUCCESS');
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [isUsingSupabaseData, setIsUsingSupabaseData] = useState<boolean>(false);
 
   const [selectedSiteFilter, setSelectedSiteFilter] = useState<string>('ALL');
   const [selectedContractorFilter, setSelectedContractorFilter] = useState<string>('ALL');
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const showToast = (title: string, message: string, type: ToastMessage['type'] = 'success') => {
+  const showToast = (
+    title: string,
+    message: string,
+    type: ToastMessage['type'] = 'success'
+  ) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
     setToasts((prev) => [...prev, { id, title, message, type }]);
     setTimeout(() => {
@@ -112,7 +160,118 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     );
   };
 
-  const approveDocument = (documentId: string, reviewedBy = 'Fiscal Roberto Farias (TST)') => {
+  // Main loader for Supabase data
+  const loadDataFromSupabase = useCallback(async () => {
+    const supabase = getSupabaseClient();
+    if (!isConfigured || !supabase || !user) {
+      // Revert to demo mode gracefully
+      setOrganizationName('DocuCrew Demonstração');
+      setContractors(INITIAL_CONTRACTORS);
+      setWorksites(INITIAL_WORKSITES);
+      setWorkers(INITIAL_WORKERS);
+      setDocuments(INITIAL_DOCUMENTS);
+      setAlerts(INITIAL_ALERTS);
+      setDocumentTypes(INITIAL_DOCUMENT_TYPES);
+      setIsUsingSupabaseData(false);
+      setDataLoadingState('SUCCESS');
+      setDataError(null);
+      return;
+    }
+
+    setDataLoadingState('LOADING');
+    setDataError(null);
+
+    try {
+      // 1. Fetch Organization linked to user
+      const orgResult = await fetchUserOrganization(supabase, user.id);
+
+      if (orgResult.error) {
+        setDataError(orgResult.error);
+        setDataLoadingState('ERROR');
+        return;
+      }
+
+      if (!orgResult.found || !orgResult.organizationId) {
+        setOrganizationName(orgResult.organizationName || 'DocuCrew Demonstração');
+        setDataLoadingState('ORG_NOT_FOUND');
+        setIsUsingSupabaseData(false);
+        return;
+      }
+
+      setOrganizationName(orgResult.organizationName);
+
+      // 2. Fetch Operational Database Tables for the organization
+      const dashboardResult = await loadSupabaseDashboardData(
+        supabase,
+        orgResult.organizationId
+      );
+
+      if (!dashboardResult.success || !dashboardResult.data) {
+        setDataError(dashboardResult.error || 'Não foi possível carregar os dados operacionais.');
+        setDataLoadingState('ERROR');
+        // Keep fallback data so screen is never blank
+        return;
+      }
+
+      const {
+        contractors: dbContractors,
+        worksites: dbSites,
+        workers: dbWorkers,
+        documents: dbDocs,
+        documentTypes: dbDocTypes,
+        alerts: dbAlerts,
+      } = dashboardResult.data;
+
+      // Update state with real Supabase data
+      setContractors(dbContractors.length > 0 ? dbContractors : INITIAL_CONTRACTORS);
+      setWorksites(dbSites.length > 0 ? dbSites : INITIAL_WORKSITES);
+      setWorkers(dbWorkers.length > 0 ? dbWorkers : INITIAL_WORKERS);
+      setDocuments(dbDocs.length > 0 ? dbDocs : INITIAL_DOCUMENTS);
+      if (dbDocTypes.length > 0) {
+        setDocumentTypes(dbDocTypes);
+      }
+      if (dbAlerts.length > 0) {
+        setAlerts(dbAlerts);
+      }
+
+      setIsUsingSupabaseData(true);
+
+      if (dashboardResult.isEmpty) {
+        setDataLoadingState('EMPTY');
+      } else {
+        setDataLoadingState('SUCCESS');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha na conexão com o Supabase';
+      console.warn('Erro ao carregar dados do Supabase:', msg);
+      setDataError(msg);
+      setDataLoadingState('ERROR');
+    }
+  }, [isConfigured, user]);
+
+  // Synchronize data whenever user session or mode changes
+  useEffect(() => {
+    if (authMode === 'supabase' && user) {
+      loadDataFromSupabase();
+    } else {
+      // Demo mode fallback
+      setOrganizationName('DocuCrew Demonstração');
+      setContractors(INITIAL_CONTRACTORS);
+      setWorksites(INITIAL_WORKSITES);
+      setWorkers(INITIAL_WORKERS);
+      setDocuments(INITIAL_DOCUMENTS);
+      setAlerts(INITIAL_ALERTS);
+      setDocumentTypes(INITIAL_DOCUMENT_TYPES);
+      setIsUsingSupabaseData(false);
+      setDataLoadingState('SUCCESS');
+      setDataError(null);
+    }
+  }, [authMode, user, loadDataFromSupabase]);
+
+  const approveDocument = (
+    documentId: string,
+    reviewedBy = 'Fiscal Roberto Farias (TST)'
+  ) => {
     let affectedWorkerId = '';
     let docName = '';
     let workerName = '';
@@ -147,7 +306,11 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     );
   };
 
-  const rejectDocument = (documentId: string, reason: string, reviewedBy = 'Fiscal Roberto Farias (TST)') => {
+  const rejectDocument = (
+    documentId: string,
+    reason: string,
+    reviewedBy = 'Fiscal Roberto Farias (TST)'
+  ) => {
     let affectedWorkerId = '';
     let docName = '';
     let workerName = '';
@@ -198,7 +361,11 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     );
   };
 
-  const requestCorrection = (documentId: string, notes: string, reviewedBy = 'Fiscal Roberto Farias (TST)') => {
+  const requestCorrection = (
+    documentId: string,
+    notes: string,
+    reviewedBy = 'Fiscal Roberto Farias (TST)'
+  ) => {
     let affectedWorkerId = '';
     let docName = '';
     let workerName = '';
@@ -253,7 +420,10 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       contractorName: contractor?.tradeName || 'Terceirizada',
       channel,
       subject,
-      sentAt: `Hoje às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+      sentAt: `Hoje às ${new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}`,
       status: 'ENTREGUE',
     };
 
@@ -261,7 +431,9 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     showToast(
       'Cobrança Enviada com Sucesso',
-      `Notificação via ${channel} disparada para ${contractor?.tradeName || 'terceirizada'}.`,
+      `Notificação via ${channel} disparada para ${
+        contractor?.tradeName || 'terceirizada'
+      }.`,
       'info'
     );
   };
@@ -288,6 +460,11 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         notificationLogs,
         documentTypes,
         users,
+        organizationName,
+        dataLoadingState,
+        dataError,
+        isUsingSupabaseData,
+        reloadSupabaseData: loadDataFromSupabase,
         selectedSiteFilter,
         setSelectedSiteFilter,
         selectedContractorFilter,

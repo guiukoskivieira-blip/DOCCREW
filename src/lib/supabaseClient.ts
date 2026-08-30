@@ -38,8 +38,8 @@ export function getSupabaseClient(): SupabaseClient | null {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
-          detectSessionInUrl: true,
-          storage: window.localStorage,
+          detectSessionInUrl: typeof window !== 'undefined',
+          storage: typeof window !== 'undefined' ? window.localStorage : undefined,
           flowType: 'pkce',
         },
       });
