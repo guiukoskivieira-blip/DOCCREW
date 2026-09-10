@@ -8,6 +8,7 @@ import {
   updateContractorStatus,
   updateWorkerStatus,
   updateDocumentStatus,
+  getDocumentDownloadUrl,
   validateUploadFile,
 } from './supabaseMutationService';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -520,6 +521,100 @@ describe('Supabase Mutation Service - Strict Real Schema Compliance', () => {
         reviewed_at: expect.any(String),
         notes: 'Auditado e validado por Eng. Silva',
       });
+    });
+
+    it('handles failure when updating document status in Supabase and reports error', async () => {
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: null, error: { message: 'Database constraint violation' } }),
+          }),
+        }),
+      } as unknown as SupabaseClient;
+
+      const result = await updateDocumentStatus(mockSupabase, 'doc-1', 'approved');
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Database constraint violation');
+    });
+
+    it('persists rejection reason and rejected status correctly', async () => {
+      let updatePayload: any = null;
+
+      const mockSupabase = {
+        from: vi.fn().mockReturnValue({
+          update: vi.fn().mockImplementation((payload: any) => {
+            updatePayload = payload;
+            return {
+              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
+          }),
+        }),
+      } as unknown as SupabaseClient;
+
+      const result = await updateDocumentStatus(
+        mockSupabase,
+        'doc-99',
+        'rejected',
+        'Rejeitado por TST',
+        'Treinamento de NR-35 vencido'
+      );
+
+      expect(result.success).toBe(true);
+      expect(updatePayload).toEqual({
+        status: 'rejected',
+        rejection_reason: 'Treinamento de NR-35 vencido',
+        reviewed_at: expect.any(String),
+        notes: 'Rejeitado por TST',
+      });
+    });
+
+    it('generates signed download URL successfully when storage file exists', async () => {
+      const mockSupabase = {
+        storage: {
+          from: vi.fn().mockReturnValue({
+            createSignedUrl: vi.fn().mockResolvedValue({
+              data: { signedUrl: 'https://supabase.co/storage/v1/object/sign/worker-documents/test.pdf?token=abc' },
+              error: null,
+            }),
+          }),
+        },
+      } as unknown as SupabaseClient;
+
+      const result = await getDocumentDownloadUrl(mockSupabase, 'org/worker/doc/test.pdf');
+      expect(result.success).toBe(true);
+      expect(result.url).toBe('https://supabase.co/storage/v1/object/sign/worker-documents/test.pdf?token=abc');
+      expect(typeof result.url).toBe('string');
+    });
+
+    it('returns error and no url when storage fails to generate signed URL', async () => {
+      const mockSupabase = {
+        storage: {
+          from: vi.fn().mockReturnValue({
+            createSignedUrl: vi.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'Object not found' },
+            }),
+          }),
+        },
+      } as unknown as SupabaseClient;
+
+      const result = await getDocumentDownloadUrl(mockSupabase, 'org/worker/doc/notfound.pdf');
+      expect(result.success).toBe(false);
+      expect(result.url).toBeUndefined();
+      expect(result.error).toBe('Object not found');
+    });
+
+    it('rejects empty file path without querying storage', async () => {
+      const mockSupabase = {
+        storage: {
+          from: vi.fn(),
+        },
+      } as unknown as SupabaseClient;
+
+      const result = await getDocumentDownloadUrl(mockSupabase, '');
+      expect(result.success).toBe(false);
+      expect(result.url).toBeUndefined();
+      expect(mockSupabase.storage.from).not.toHaveBeenCalled();
     });
   });
 });

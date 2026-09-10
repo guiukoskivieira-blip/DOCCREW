@@ -40,28 +40,42 @@ export const AnalisesPage: React.FC = () => {
     (d) => d.status === 'APROVADO' || d.status === 'RECUSADO'
   ).slice(0, 5);
 
-  const handleApprove = (doc: WorkerDocument) => {
-    approveDocument(doc.id, 'Fiscal Roberto Farias (TST)');
-    if (viewingDoc?.id === doc.id) setViewingDoc(null);
-  };
+  const [isActionSubmitting, setIsActionSubmitting] = useState(false);
 
-  const handleConfirmReject = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (rejectingDoc && rejectionReason.trim()) {
-      rejectDocument(rejectingDoc.id, rejectionReason.trim(), 'Fiscal Roberto Farias (TST)');
-      setRejectingDoc(null);
-      setRejectionReason('');
-      if (viewingDoc?.id === rejectingDoc.id) setViewingDoc(null);
+  const handleApprove = async (doc: WorkerDocument) => {
+    setIsActionSubmitting(true);
+    const res = await approveDocument(doc.id, 'Fiscal Roberto Farias (TST)');
+    setIsActionSubmitting(false);
+    if (res.success && viewingDoc?.id === doc.id) {
+      setViewingDoc(null);
     }
   };
 
-  const handleConfirmCorrection = (e: React.FormEvent) => {
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (rejectingDoc && rejectionReason.trim()) {
+      setIsActionSubmitting(true);
+      const res = await rejectDocument(rejectingDoc.id, rejectionReason.trim(), 'Fiscal Roberto Farias (TST)');
+      setIsActionSubmitting(false);
+      if (res.success) {
+        if (viewingDoc?.id === rejectingDoc.id) setViewingDoc(null);
+        setRejectingDoc(null);
+        setRejectionReason('');
+      }
+    }
+  };
+
+  const handleConfirmCorrection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (correctingDoc && correctionNotes.trim()) {
-      requestCorrection(correctingDoc.id, correctionNotes.trim(), 'Fiscal Roberto Farias (TST)');
-      setCorrectingDoc(null);
-      setCorrectionNotes('');
-      if (viewingDoc?.id === correctingDoc.id) setViewingDoc(null);
+      setIsActionSubmitting(true);
+      const res = await requestCorrection(correctingDoc.id, correctionNotes.trim(), 'Fiscal Roberto Farias (TST)');
+      setIsActionSubmitting(false);
+      if (res.success) {
+        if (viewingDoc?.id === correctingDoc.id) setViewingDoc(null);
+        setCorrectingDoc(null);
+        setCorrectionNotes('');
+      }
     }
   };
 

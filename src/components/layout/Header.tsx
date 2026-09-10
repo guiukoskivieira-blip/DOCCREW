@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Menu, Bell, ShieldCheck, UserCheck, AlertTriangle, ChevronDown, Check, ExternalLink, Shield } from 'lucide-react';
 import { useDocuCrew } from '../../context/DocuCrewContext';
+import { useAuth } from '../../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { DocuCrewIcon } from '../common/DocuCrewLogo';
 import { UserMenu } from '../auth/UserMenu';
@@ -12,10 +13,62 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ onMenuClick, pageTitle }) => {
   const { alerts, markAlertAsRead, organizationName, isUsingSupabaseData, dataLoadingState } = useDocuCrew();
+  const { authMode, user } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
 
   const unreadAlerts = alerts.filter((a) => !a.isRead);
   const criticalCount = alerts.filter((a) => a.severity === 'CRITICA').length;
+
+  const renderStatusPill = () => {
+    if (dataLoadingState === 'LOADING') {
+      return (
+        <>
+          <span className="w-2 h-2 rounded-full bg-[#FFC400] animate-spin" />
+          <span className="font-bold text-[11px] text-[#587087]">Sincronizando...</span>
+        </>
+      );
+    }
+    if (isUsingSupabaseData && organizationName) {
+      return (
+        <>
+          <span className="w-2 h-2 rounded-full bg-[#00A878]" />
+          <span className="font-bold text-[11px] text-[#00A878] truncate max-w-[160px]">
+            Supabase: {organizationName}
+          </span>
+        </>
+      );
+    }
+    if (authMode === 'demo') {
+      return (
+        <>
+          <span className="w-2 h-2 rounded-full bg-[#FFC400]" />
+          <span className="font-bold text-[11px] text-[#D97706]">Modo Demo</span>
+        </>
+      );
+    }
+    if (dataLoadingState === 'ORG_NOT_FOUND') {
+      return (
+        <>
+          <span className="w-2 h-2 rounded-full bg-amber-500" />
+          <span className="font-bold text-[11px] text-amber-600">Sem Organização</span>
+        </>
+      );
+    }
+    if (dataLoadingState === 'ERROR') {
+      return (
+        <>
+          <span className="w-2 h-2 rounded-full bg-rose-500" />
+          <span className="font-bold text-[11px] text-rose-600">Erro de Conexão</span>
+        </>
+      );
+    }
+    return (
+      <>
+        <span className="w-2 h-2 rounded-full bg-slate-400" />
+        <span className="font-bold text-[11px] text-[#587087]">Não Autenticado</span>
+      </>
+    );
+  };
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-md border-b border-[#DCE4EC] px-4 sm:px-6 flex items-center justify-between">
@@ -34,10 +87,12 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, pageTitle }) => {
             <h1 className="text-base sm:text-lg font-extrabold text-[#102033] tracking-tight">
               {pageTitle || 'Visão Executiva'}
             </h1>
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-[#F5F7FA] text-[#061E2E] border border-[#DCE4EC]">
-              <span className="w-2 h-2 rounded-full bg-[#00A878]"></span>
-              {organizationName}
-            </span>
+            {organizationName && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-[#F5F7FA] text-[#061E2E] border border-[#DCE4EC]">
+                <span className="w-2 h-2 rounded-full bg-[#00A878]"></span>
+                {organizationName}
+              </span>
+            )}
           </div>
           <p className="text-xs text-[#587087] hidden sm:block">
             DocuCrew • Gestão de Conformidade de Terceirizados & Prontuários
@@ -48,23 +103,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuClick, pageTitle }) => {
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-4">
         {/* Quick status pill */}
-        <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-lg bg-[#F5F7FA] border border-[#DCE4EC] text-xs text-[#102033]">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              dataLoadingState === 'LOADING'
-                ? 'bg-[#FFC400] animate-spin'
-                : isUsingSupabaseData
-                ? 'bg-[#00A878] animate-pulse'
-                : 'bg-[#1473E6]'
-            }`}
-          />
-          <span className="font-bold text-[11px]">
-            {dataLoadingState === 'LOADING'
-              ? 'Sincronizando...'
-              : isUsingSupabaseData
-              ? organizationName
-              : 'Ambiente Demonstrativo'}
-          </span>
+        <div className="hidden md:flex items-center gap-2 px-3 py-1 rounded-lg bg-[#F5F7FA] border border-[#DCE4EC] text-xs">
+          {renderStatusPill()}
         </div>
 
         {/* Notifications Popover Toggle */}

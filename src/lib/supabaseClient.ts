@@ -18,6 +18,16 @@ export function isSupabaseConfigured(): boolean {
   );
 }
 
+/**
+ * Checks if demo mode is explicitly enabled via environment variable.
+ * By default in production builds, demo mode is strictly false (Fail Closed).
+ * It will NEVER be activated implicitly due to missing env, missing session or errors.
+ */
+export function isDemoModeAllowed(): boolean {
+  const explicitFlag = import.meta.env.VITE_ENABLE_DEMO_MODE;
+  return explicitFlag === 'true' || explicitFlag === true;
+}
+
 export const SUPABASE_URL = rawSupabaseUrl.trim();
 export const SUPABASE_ANON_KEY = rawSupabaseAnonKey.trim();
 

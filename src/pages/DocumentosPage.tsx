@@ -26,7 +26,7 @@ import { Link } from 'react-router-dom';
 import { UploadDocumentModal } from '../components/modals/UploadDocumentModal';
 
 export const DocumentosPage: React.FC = () => {
-  const { documents, documentTypes, contractors, worksites, downloadDocumentFile } = useDocuCrew();
+  const { documents, documentTypes, contractors, worksites, downloadDocumentFile, showToast } = useDocuCrew();
   const location = useLocation();
 
   // Check URL query param for pre-filtered worker
@@ -43,17 +43,33 @@ export const DocumentosPage: React.FC = () => {
   const [downloadLoading, setDownloadLoading] = useState(false);
 
   const handleDownload = async (doc: WorkerDocument) => {
-    if (doc.filePath) {
+    if (!doc.filePath) {
+      showToast(
+        'Arquivo Indisponível',
+        'Este registro é um documento demonstrativo e não possui arquivo físico anexado no armazenamento.',
+        'warning'
+      );
+      return;
+    }
+
+    try {
       setDownloadLoading(true);
-      const url = await downloadDocumentFile(doc.filePath);
+      const result = await downloadDocumentFile(doc.filePath);
       setDownloadLoading(false);
-      if (url) {
-        window.open(url, '_blank');
+
+      if (result.success && result.url && typeof result.url === 'string') {
+        window.open(result.url, '_blank');
       } else {
-        alert('O arquivo deste documento não foi encontrado no armazenamento.');
+        showToast(
+          'Falha no Download',
+          result.error || 'O arquivo deste documento não foi encontrado no armazenamento.',
+          'error'
+        );
       }
-    } else {
-      alert('Documento de homologação demonstrativo.');
+    } catch (err: unknown) {
+      setDownloadLoading(false);
+      const msg = err instanceof Error ? err.message : 'Erro inesperado ao obter link de download.';
+      showToast('Falha no Download', msg, 'error');
     }
   };
 

@@ -1,27 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User, Session, AuthError } from '@supabase/supabase-js';
-import { getSupabaseClient, isSupabaseConfigured, SUPABASE_URL } from '../lib/supabaseClient';
+import { getSupabaseClient, isSupabaseConfigured, isDemoModeAllowed, SUPABASE_URL } from '../lib/supabaseClient';
 import { SystemUser } from '../types';
 import { INITIAL_SYSTEM_USERS } from '../data/mockData';
 
-export type AuthMode = 'supabase' | 'demo';
+export type AuthMode = 'supabase' | 'demo' | 'config_error';
 
 export interface AuthContextType {
   user: User | null;
   session: Session | null;
-  currentUser: SystemUser;
+  currentUser: SystemUser | null;
   authMode: AuthMode;
   isConfigured: boolean;
+  isDemoAllowed: boolean;
   isLoading: boolean;
   error: string | null;
   supabaseUrl: string;
   isAuthModalOpen: boolean;
+  isRecoveryFlowActive: boolean;
   
   // Actions
   signIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   signUp: (email: string, password: string, name: string, role?: SystemUser['role']) => Promise<{ success: boolean; error?: string; requireVerification?: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  updateUserPassword: (newPassword: string) => Promise<{ success: boolean; error?: string }>;
+  resendConfirmationEmail: (email: string) => Promise<{ success: boolean; error?: string }>;
+  setIsRecoveryFlowActive: (active: boolean) => void;
   setDemoUser: (userOrId: string | SystemUser) => void;
   openAuthModal: () => void;
   closeAuthModal: () => void;
@@ -31,18 +36,31 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const configured = isSupabaseConfigured();
+  const demoAllowed = isDemoModeAllowed();
+  const supabase = getSupabaseClient();
+
+  // Strict fail-closed initial state:
+  // If Supabase is configured -> starts in 'supabase' mode, unauthenticated (null), loading session.
+  // If Supabase is NOT configured -> only enters 'demo' if VITE_ENABLE_DEMO_MODE=true. Otherwise 'config_error'.
+  const initialMode: AuthMode = configured ? 'supabase' : (demoAllowed ? 'demo' : 'config_error');
+
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [authMode, setAuthMode] = useState<AuthMode>('demo');
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>(initialMode);
+  const [isLoading, setIsLoading] = useState<boolean>(configured);
+  const [error, setError] = useState<string | null>(
+    initialMode === 'config_error'
+      ? 'SYSTEM_CONFIGURATION_ERROR: Supabase URL ou Anon Key não configuradas no ambiente e o modo demonstração está desabilitado.'
+      : null
+  );
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [isRecoveryFlowActive, setIsRecoveryFlowActive] = useState<boolean>(false);
 
-  // Active user representation in DocuCrew
-  const [currentUser, setCurrentUser] = useState<SystemUser>(INITIAL_SYSTEM_USERS[0]);
-
-  const configured = isSupabaseConfigured();
-  const supabase = getSupabaseClient();
+  // Active user representation in DocuCrew (strictly null when unauthenticated in Supabase mode)
+  const [currentUser, setCurrentUser] = useState<SystemUser | null>(
+    initialMode === 'demo' ? INITIAL_SYSTEM_USERS[0] : null
+  );
 
   const syncUserWithSystem = useCallback((sbUser: User | null) => {
     if (sbUser) {
@@ -60,11 +78,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
       setAuthMode('supabase');
     } else {
-      // Revert to default fiscal demo profile
-      setCurrentUser(INITIAL_SYSTEM_USERS[0]);
-      setAuthMode('demo');
+      // Unauthenticated state
+      if (configured) {
+        // FAIL CLOSED: No user in Supabase mode -> never fallback to demo
+        setCurrentUser(null);
+        setAuthMode('supabase');
+      } else if (demoAllowed) {
+        setCurrentUser(INITIAL_SYSTEM_USERS[0]);
+        setAuthMode('demo');
+      } else {
+        setCurrentUser(null);
+        setAuthMode('config_error');
+      }
     }
-  }, []);
+  }, [configured, demoAllowed]);
 
   // Initialize Supabase Auth Session
   useEffect(() => {
@@ -87,10 +114,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setSession(data.session);
             setUser(data.session.user);
             syncUserWithSystem(data.session.user);
+          } else {
+            setSession(null);
+            setUser(null);
+            syncUserWithSystem(null);
           }
         }
       } catch (err) {
         console.warn('Erro ao checar autenticação Supabase:', err);
+        if (mounted) {
+          setSession(null);
+          setUser(null);
+          syncUserWithSystem(null);
+        }
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -104,8 +140,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     let subscription: { unsubscribe: () => void } | null = null;
 
     if (configured && supabase) {
-      const { data: authListener } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, currentSession) => {
         if (mounted) {
+          if (event === 'PASSWORD_RECOVERY') {
+            setIsRecoveryFlowActive(true);
+          } else if (event === 'SIGNED_OUT') {
+            setIsRecoveryFlowActive(false);
+          }
           setSession(currentSession);
           setUser(currentSession?.user ?? null);
           syncUserWithSystem(currentSession?.user ?? null);
@@ -129,7 +170,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (!configured || !supabase) {
       setIsLoading(false);
-      // If demo mode, check mock accounts
+      if (!demoAllowed) {
+        const msg = 'SYSTEM_CONFIGURATION_ERROR: Supabase não está configurado e o modo demonstração está desabilitado.';
+        setError(msg);
+        return { success: false, error: msg };
+      }
+      // If demo mode is explicitly enabled, allow mock login
       const match = INITIAL_SYSTEM_USERS.find(
         (u) => u.email.toLowerCase() === email.trim().toLowerCase()
       );
@@ -139,7 +185,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsAuthModalOpen(false);
         return { success: true };
       }
-      // Demo mock fallback allow signin
       setCurrentUser({
         id: `demo-${Date.now()}`,
         name: email.split('@')[0],
@@ -191,6 +236,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (!configured || !supabase) {
       setIsLoading(false);
+      if (!demoAllowed) {
+        const msg = 'SYSTEM_CONFIGURATION_ERROR: Supabase não está configurado e o modo demonstração está desabilitado.';
+        setError(msg);
+        return { success: false, error: msg };
+      }
       const newUser: SystemUser = {
         id: `demo-${Date.now()}`,
         name: name.trim() || email.split('@')[0],
@@ -259,6 +309,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
     setUser(null);
     setSession(null);
+    setIsRecoveryFlowActive(false);
     syncUserWithSystem(null);
     setIsLoading(false);
   };
@@ -266,11 +317,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const resetPassword = async (email: string): Promise<{ success: boolean; error?: string }> => {
     setError(null);
     if (!configured || !supabase) {
+      if (!demoAllowed) {
+        return { success: false, error: 'SYSTEM_CONFIGURATION_ERROR: Supabase não está configurado.' };
+      }
       return { success: true };
     }
 
     try {
-      const { error: sbError } = await supabase.auth.resetPasswordForEmail(email.trim());
+      const redirectTo = `${window.location.origin}/reset-password`;
+      const { error: sbError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo,
+      });
       if (sbError) {
         const errorMsg = formatSupabaseError(sbError);
         setError(errorMsg);
@@ -284,7 +341,61 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const updateUserPassword = async (newPassword: string): Promise<{ success: boolean; error?: string }> => {
+    setError(null);
+    if (!configured || !supabase) {
+      return { success: false, error: 'Supabase não está configurado.' };
+    }
+    if (!newPassword || newPassword.length < 8) {
+      return { success: false, error: 'A nova senha deve ter no mínimo 8 caracteres.' };
+    }
+
+    try {
+      const { error: sbError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+      if (sbError) {
+        const errorMsg = formatSupabaseError(sbError);
+        setError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+      setIsRecoveryFlowActive(false);
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Falha ao atualizar senha';
+      setError(msg);
+      return { success: false, error: msg };
+    }
+  };
+
+  const resendConfirmationEmail = async (email: string): Promise<{ success: boolean; error?: string }> => {
+    setError(null);
+    if (!configured || !supabase) {
+      return { success: false, error: 'Supabase não está configurado.' };
+    }
+    try {
+      const { error: sbError } = await supabase.auth.resend({
+        type: 'signup',
+        email: email.trim(),
+      });
+      if (sbError) {
+        const errorMsg = formatSupabaseError(sbError);
+        setError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao reenviar confirmação';
+      setError(msg);
+      return { success: false, error: msg };
+    }
+  };
+
   const setDemoUser = (userOrId: string | SystemUser) => {
+    if (!demoAllowed) {
+      console.warn('Tentativa de ativar usuário demo rejeitada: modo demonstração desabilitado.');
+      return;
+    }
     if (typeof userOrId === 'string') {
       const found = INITIAL_SYSTEM_USERS.find((u) => u.id === userOrId);
       if (found) {
@@ -311,14 +422,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         currentUser,
         authMode,
         isConfigured: configured,
+        isDemoAllowed: demoAllowed,
         isLoading,
         error,
         supabaseUrl: SUPABASE_URL,
         isAuthModalOpen,
+        isRecoveryFlowActive,
         signIn,
         signUp,
         signOut,
         resetPassword,
+        updateUserPassword,
+        resendConfirmationEmail,
+        setIsRecoveryFlowActive,
         setDemoUser,
         openAuthModal,
         closeAuthModal,
@@ -339,18 +455,24 @@ export const useAuth = (): AuthContextType => {
 };
 
 function formatSupabaseError(err: AuthError): string {
-  switch (err.message) {
-    case 'Invalid login credentials':
-      return 'E-mail ou senha incorretos. Verifique suas credenciais.';
-    case 'User already registered':
-      return 'Este e-mail já está cadastrado no sistema.';
-    case 'Password should be at least 6 characters':
-      return 'A senha deve conter no mínimo 6 caracteres.';
-    case 'Email rate limit exceeded':
-      return 'Limite de requisições excedido. Aguarde alguns instantes.';
-    case 'Invalid email':
-      return 'Formato de e-mail inválido.';
-    default:
-      return err.message || 'Ocorreu um erro durante a autenticação.';
+  const msg = err.message || '';
+  if (msg.includes('Invalid login credentials')) {
+    return 'E-mail ou senha incorretos. Verifique suas credenciais.';
   }
+  if (msg.includes('User already registered')) {
+    return 'Este e-mail já está cadastrado no sistema.';
+  }
+  if (msg.includes('Password should be at least')) {
+    return 'A senha deve conter no mínimo 8 caracteres.';
+  }
+  if (msg.toLowerCase().includes('rate limit')) {
+    return 'Limite de requisições excedido. Por favor, aguarde alguns instantes antes de tentar novamente.';
+  }
+  if (msg.includes('Invalid email') || msg.includes('valid email')) {
+    return 'Formato de e-mail inválido.';
+  }
+  if (msg.includes('Email not confirmed')) {
+    return 'Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada para ativar a conta.';
+  }
+  return msg || 'Ocorreu um erro durante a autenticação.';
 }

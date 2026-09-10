@@ -32,7 +32,7 @@ import {
 } from '../data/mockData';
 import { evaluateWorkerCompliance } from '../domain/workerCompliance';
 import { useAuth } from './AuthContext';
-import { getSupabaseClient } from '../lib/supabaseClient';
+import { getSupabaseClient, isDemoModeAllowed } from '../lib/supabaseClient';
 import {
   fetchUserOrganization,
   loadSupabaseDashboardData,
@@ -46,6 +46,8 @@ import {
   uploadWorkerDocument,
   getDocumentDownloadUrl,
   updateOrganizationProfile,
+  updateDocumentStatus,
+  createFirstOrganization,
   CreateContractorPayload,
   CreateWorkerPayload,
   CreateSitePayload,
@@ -99,9 +101,9 @@ interface DocuCrewContextType {
   removeToast: (id: string) => void;
 
   // Actions
-  approveDocument: (documentId: string, reviewedBy?: string) => void;
-  rejectDocument: (documentId: string, reason: string, reviewedBy?: string) => void;
-  requestCorrection: (documentId: string, notes: string, reviewedBy?: string) => void;
+  approveDocument: (documentId: string, reviewedBy?: string) => Promise<{ success: boolean; error?: string }>;
+  rejectDocument: (documentId: string, reason: string, reviewedBy?: string) => Promise<{ success: boolean; error?: string }>;
+  requestCorrection: (documentId: string, notes: string, reviewedBy?: string) => Promise<{ success: boolean; error?: string }>;
   sendContractorNotification: (
     contractorId: string,
     channel: 'WHATSAPP' | 'EMAIL' | 'PORTAL',
@@ -119,6 +121,7 @@ interface DocuCrewContextType {
   uploadDocument: (file: File, payload: UploadWorkerDocumentPayload) => Promise<{ success: boolean; error?: string }>;
   downloadDocumentFile: (filePath?: string) => Promise<{ success: boolean; url?: string; error?: string }>;
   updateOrgProfile: (payload: { name: string; slug?: string }) => Promise<{ success: boolean; error?: string }>;
+  createCompanyOnboarding: (name: string) => Promise<{ success: boolean; error?: string; alreadyHasOrg?: boolean }>;
 }
 
 const DocuCrewContext = createContext<DocuCrewContextType | undefined>(undefined);
@@ -126,24 +129,21 @@ const DocuCrewContext = createContext<DocuCrewContextType | undefined>(undefined
 export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user, authMode, isConfigured } = useAuth();
 
-  const [contractors, setContractors] = useState<Contractor[]>(INITIAL_CONTRACTORS);
-  const [worksites, setWorksites] = useState<WorkSite[]>(INITIAL_WORKSITES);
-  const [workers, setWorkers] = useState<Worker[]>(INITIAL_WORKERS);
-  const [documents, setDocuments] = useState<WorkerDocument[]>(INITIAL_DOCUMENTS);
-  const [alerts, setAlerts] = useState<AlertNotification[]>(INITIAL_ALERTS);
-  const [notificationLogs, setNotificationLogs] = useState<NotificationHistoryLog[]>(
-    INITIAL_NOTIFICATION_LOGS
-  );
-  const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>(
-    INITIAL_DOCUMENT_TYPES
-  );
-  const [workerRoles, setWorkerRoles] = useState<WorkerRole[]>(INITIAL_WORKER_ROLES);
-  const [users] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
+  // Operational state: initialized EMPTY. Never populated with mocks unless authMode === 'demo' and allowed.
+  const [contractors, setContractors] = useState<Contractor[]>([]);
+  const [worksites, setWorksites] = useState<WorkSite[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [documents, setDocuments] = useState<WorkerDocument[]>([]);
+  const [alerts, setAlerts] = useState<AlertNotification[]>([]);
+  const [notificationLogs, setNotificationLogs] = useState<NotificationHistoryLog[]>([]);
+  const [documentTypes, setDocumentTypes] = useState<DocumentTypeDefinition[]>([]);
+  const [workerRoles, setWorkerRoles] = useState<WorkerRole[]>([]);
+  const [users, setUsers] = useState<SystemUser[]>([]);
 
   // Organization & Loading state
   const [organizationId, setOrganizationId] = useState<string | null>(null);
-  const [organizationName, setOrganizationName] = useState<string>('DocuCrew Demonstração');
-  const [dataLoadingState, setDataLoadingState] = useState<DataLoadingState>('SUCCESS');
+  const [organizationName, setOrganizationName] = useState<string>('');
+  const [dataLoadingState, setDataLoadingState] = useState<DataLoadingState>('IDLE');
   const [dataError, setDataError] = useState<string | null>(null);
   const [isUsingSupabaseData, setIsUsingSupabaseData] = useState<boolean>(false);
 
@@ -167,6 +167,46 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
+
+  // Helper to completely purge operational and tenant data (FAIL CLOSED)
+  const clearOperationalData = useCallback(() => {
+    setContractors([]);
+    setWorksites([]);
+    setWorkers([]);
+    setDocuments([]);
+    setAlerts([]);
+    setNotificationLogs([]);
+    setDocumentTypes([]);
+    setWorkerRoles([]);
+    setUsers([]);
+    setOrganizationId(null);
+    setOrganizationName('');
+    setIsUsingSupabaseData(false);
+  }, []);
+
+  // Helper to load explicit demo data ONLY when explicitly authorized
+  const loadDemoData = useCallback(() => {
+    if (!isDemoModeAllowed()) {
+      clearOperationalData();
+      setDataLoadingState('ERROR');
+      setDataError('O modo demonstração está desabilitado.');
+      return;
+    }
+    setContractors(INITIAL_CONTRACTORS);
+    setWorksites(INITIAL_WORKSITES);
+    setWorkers(INITIAL_WORKERS);
+    setDocuments(INITIAL_DOCUMENTS);
+    setAlerts(INITIAL_ALERTS);
+    setNotificationLogs(INITIAL_NOTIFICATION_LOGS);
+    setDocumentTypes(INITIAL_DOCUMENT_TYPES);
+    setWorkerRoles(INITIAL_WORKER_ROLES);
+    setUsers(INITIAL_SYSTEM_USERS);
+    setOrganizationId(null);
+    setOrganizationName('DocuCrew Demonstração');
+    setIsUsingSupabaseData(false);
+    setDataLoadingState('SUCCESS');
+    setDataError(null);
+  }, [clearOperationalData]);
 
   // Helper to re-evaluate worker status based on current documents
   const recalculateWorkerState = (workerId: string, currentDocs: WorkerDocument[]) => {
@@ -192,21 +232,12 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     );
   };
 
-  // Main loader for Supabase data
+  // Main loader for Supabase data (strictly fail-closed: zero mocks upon error, timeout or missing org)
   const loadDataFromSupabase = useCallback(async () => {
     const supabase = getSupabaseClient();
     if (!isConfigured || !supabase || !user) {
-      // Revert to demo mode gracefully
-      setOrganizationId(null);
-      setOrganizationName('DocuCrew Demonstração');
-      setContractors(INITIAL_CONTRACTORS);
-      setWorksites(INITIAL_WORKSITES);
-      setWorkers(INITIAL_WORKERS);
-      setDocuments(INITIAL_DOCUMENTS);
-      setAlerts(INITIAL_ALERTS);
-      setDocumentTypes(INITIAL_DOCUMENT_TYPES);
-      setIsUsingSupabaseData(false);
-      setDataLoadingState('SUCCESS');
+      clearOperationalData();
+      setDataLoadingState('IDLE');
       setDataError(null);
       return;
     }
@@ -219,16 +250,15 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       const orgResult = await fetchUserOrganization(supabase, user.id);
 
       if (orgResult.error) {
+        clearOperationalData();
         setDataError(orgResult.error);
         setDataLoadingState('ERROR');
         return;
       }
 
       if (!orgResult.found || !orgResult.organizationId) {
-        setOrganizationId(null);
-        setOrganizationName(orgResult.organizationName || 'DocuCrew Demonstração');
+        clearOperationalData();
         setDataLoadingState('ORG_NOT_FOUND');
-        setIsUsingSupabaseData(false);
         return;
       }
 
@@ -242,9 +272,11 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       );
 
       if (!dashboardResult.success || !dashboardResult.data) {
-        setDataError(dashboardResult.error || 'Não foi possível carregar os dados operacionais.');
+        clearOperationalData();
+        setOrganizationId(orgResult.organizationId);
+        setOrganizationName(orgResult.organizationName);
+        setDataError(dashboardResult.error || 'Não foi possível carregar os dados operacionais do Supabase.');
         setDataLoadingState('ERROR');
-        // Keep fallback data so screen is never blank
         return;
       }
 
@@ -258,20 +290,14 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         alerts: dbAlerts,
       } = dashboardResult.data;
 
-      // Update state with real Supabase data
-      setContractors(dbContractors.length > 0 ? dbContractors : INITIAL_CONTRACTORS);
-      setWorksites(dbSites.length > 0 ? dbSites : INITIAL_WORKSITES);
-      setWorkers(dbWorkers.length > 0 ? dbWorkers : INITIAL_WORKERS);
-      setDocuments(dbDocs.length > 0 ? dbDocs : INITIAL_DOCUMENTS);
-      if (dbDocTypes.length > 0) {
-        setDocumentTypes(dbDocTypes);
-      }
-      if (dbRoles && dbRoles.length > 0) {
-        setWorkerRoles(dbRoles);
-      }
-      if (dbAlerts.length > 0) {
-        setAlerts(dbAlerts);
-      }
+      // Update state strictly with real Supabase data — NEVER fallback to INITIAL_*
+      setContractors(dbContractors);
+      setWorksites(dbSites);
+      setWorkers(dbWorkers);
+      setDocuments(dbDocs);
+      setDocumentTypes(dbDocTypes);
+      setWorkerRoles(dbRoles || []);
+      setAlerts(dbAlerts || []);
 
       setIsUsingSupabaseData(true);
 
@@ -283,45 +309,64 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Falha na conexão com o Supabase';
       console.warn('Erro ao carregar dados do Supabase:', msg);
+      clearOperationalData();
       setDataError(msg);
       setDataLoadingState('ERROR');
     }
-  }, [isConfigured, user]);
+  }, [isConfigured, user, clearOperationalData]);
 
   // Synchronize data whenever user session or mode changes
   useEffect(() => {
-    if (authMode === 'supabase' && user) {
-      loadDataFromSupabase();
+    if (authMode === 'supabase') {
+      if (user) {
+        loadDataFromSupabase();
+      } else {
+        clearOperationalData();
+        setDataLoadingState('IDLE');
+        setDataError(null);
+      }
+    } else if (authMode === 'demo') {
+      loadDemoData();
     } else {
-      // Demo mode fallback
-      setOrganizationId(null);
-      setOrganizationName('DocuCrew Demonstração');
-      setContractors(INITIAL_CONTRACTORS);
-      setWorksites(INITIAL_WORKSITES);
-      setWorkers(INITIAL_WORKERS);
-      setDocuments(INITIAL_DOCUMENTS);
-      setAlerts(INITIAL_ALERTS);
-      setDocumentTypes(INITIAL_DOCUMENT_TYPES);
-      setIsUsingSupabaseData(false);
-      setDataLoadingState('SUCCESS');
-      setDataError(null);
+      // config_error
+      clearOperationalData();
+      setDataLoadingState('ERROR');
+      setDataError('SYSTEM_CONFIGURATION_ERROR: Supabase indisponível e modo demonstração desabilitado.');
     }
-  }, [authMode, user, loadDataFromSupabase]);
+  }, [authMode, user, loadDataFromSupabase, loadDemoData, clearOperationalData]);
 
-  const approveDocument = (
+
+  const approveDocument = async (
     documentId: string,
     reviewedBy = 'Fiscal Roberto Farias (TST)'
-  ) => {
-    let affectedWorkerId = '';
-    let docName = '';
-    let workerName = '';
+  ): Promise<{ success: boolean; error?: string }> => {
+    const targetDoc = documents.find((d) => d.id === documentId);
+    const docName = targetDoc?.documentTypeName || 'Documento';
+    const workerName = targetDoc?.workerName || 'Trabalhador';
+    const affectedWorkerId = targetDoc?.workerId;
+
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && supabase) {
+      const result = await updateDocumentStatus(
+        supabase,
+        documentId,
+        'approved',
+        `Aprovado por ${reviewedBy}`,
+        undefined
+      );
+      if (!result.success) {
+        showToast(
+          'Erro ao Aprovar Documento',
+          result.error || 'Falha ao persistir a aprovação no banco de dados.',
+          'error'
+        );
+        return { success: false, error: result.error };
+      }
+    }
 
     setDocuments((prevDocs) => {
       const nextDocs = prevDocs.map((doc) => {
         if (doc.id === documentId) {
-          affectedWorkerId = doc.workerId;
-          docName = doc.documentTypeName;
-          workerName = doc.workerName;
           return {
             ...doc,
             status: 'APROVADO' as DocumentStatus,
@@ -333,8 +378,9 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         return doc;
       });
 
-      if (affectedWorkerId) {
-        setTimeout(() => recalculateWorkerState(affectedWorkerId, nextDocs), 0);
+      const workerIdToRecalculate = affectedWorkerId || nextDocs.find((d) => d.id === documentId)?.workerId;
+      if (workerIdToRecalculate) {
+        setTimeout(() => recalculateWorkerState(workerIdToRecalculate, nextDocs), 0);
       }
       return nextDocs;
     });
@@ -344,23 +390,41 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       `O documento "${docName}" de ${workerName} foi validado e marcado como APROVADO.`,
       'success'
     );
+    return { success: true };
   };
 
-  const rejectDocument = (
+  const rejectDocument = async (
     documentId: string,
     reason: string,
     reviewedBy = 'Fiscal Roberto Farias (TST)'
-  ) => {
-    let affectedWorkerId = '';
-    let docName = '';
-    let workerName = '';
+  ): Promise<{ success: boolean; error?: string }> => {
+    const targetDoc = documents.find((d) => d.id === documentId);
+    const docName = targetDoc?.documentTypeName || 'Documento';
+    const workerName = targetDoc?.workerName || 'Trabalhador';
+    const affectedWorkerId = targetDoc?.workerId;
+
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && supabase) {
+      const result = await updateDocumentStatus(
+        supabase,
+        documentId,
+        'rejected',
+        `Rejeitado por ${reviewedBy}: ${reason}`,
+        reason
+      );
+      if (!result.success) {
+        showToast(
+          'Erro ao Recusar Documento',
+          result.error || 'Falha ao persistir a recusa no banco de dados.',
+          'error'
+        );
+        return { success: false, error: result.error };
+      }
+    }
 
     setDocuments((prevDocs) => {
       const nextDocs = prevDocs.map((doc) => {
         if (doc.id === documentId) {
-          affectedWorkerId = doc.workerId;
-          docName = doc.documentTypeName;
-          workerName = doc.workerName;
           return {
             ...doc,
             status: 'RECUSADO' as DocumentStatus,
@@ -372,8 +436,9 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         return doc;
       });
 
-      if (affectedWorkerId) {
-        setTimeout(() => recalculateWorkerState(affectedWorkerId, nextDocs), 0);
+      const workerIdToRecalculate = affectedWorkerId || nextDocs.find((d) => d.id === documentId)?.workerId;
+      if (workerIdToRecalculate) {
+        setTimeout(() => recalculateWorkerState(workerIdToRecalculate, nextDocs), 0);
       }
       return nextDocs;
     });
@@ -386,7 +451,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       title: `Documento Recusado: ${docName}`,
       description: `${workerName} foi bloqueado devido à reprovação de ${docName}. Motivo: ${reason}`,
       workerName,
-      contractorName: 'Terceirizada',
+      contractorName: targetDoc?.contractorName || 'Terceirizada',
       documentName: docName,
       createdAt: 'Agora mesmo',
       isRead: false,
@@ -399,23 +464,41 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       `O documento "${docName}" foi reprovado com motivo: "${reason}". O trabalhador foi mantido como BLOQUEADO.`,
       'error'
     );
+    return { success: true };
   };
 
-  const requestCorrection = (
+  const requestCorrection = async (
     documentId: string,
     notes: string,
     reviewedBy = 'Fiscal Roberto Farias (TST)'
-  ) => {
-    let affectedWorkerId = '';
-    let docName = '';
-    let workerName = '';
+  ): Promise<{ success: boolean; error?: string }> => {
+    const targetDoc = documents.find((d) => d.id === documentId);
+    const docName = targetDoc?.documentTypeName || 'Documento';
+    const workerName = targetDoc?.workerName || 'Trabalhador';
+    const affectedWorkerId = targetDoc?.workerId;
+
+    const supabase = getSupabaseClient();
+    if (isUsingSupabaseData && supabase) {
+      const result = await updateDocumentStatus(
+        supabase,
+        documentId,
+        'under_review',
+        `Correção solicitada por ${reviewedBy}: ${notes}`,
+        `Correção solicitada: ${notes}`
+      );
+      if (!result.success) {
+        showToast(
+          'Erro ao Solicitar Correção',
+          result.error || 'Falha ao persistir a solicitação no banco de dados.',
+          'error'
+        );
+        return { success: false, error: result.error };
+      }
+    }
 
     setDocuments((prevDocs) => {
       const nextDocs = prevDocs.map((doc) => {
         if (doc.id === documentId) {
-          affectedWorkerId = doc.workerId;
-          docName = doc.documentTypeName;
-          workerName = doc.workerName;
           return {
             ...doc,
             status: 'PENDENTE' as DocumentStatus,
@@ -428,8 +511,9 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         return doc;
       });
 
-      if (affectedWorkerId) {
-        setTimeout(() => recalculateWorkerState(affectedWorkerId, nextDocs), 0);
+      const workerIdToRecalculate = affectedWorkerId || nextDocs.find((d) => d.id === documentId)?.workerId;
+      if (workerIdToRecalculate) {
+        setTimeout(() => recalculateWorkerState(workerIdToRecalculate, nextDocs), 0);
       }
       return nextDocs;
     });
@@ -439,6 +523,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
       `Uma notificação de ajuste para "${docName}" de ${workerName} foi enviada para a prestadora.`,
       'warning'
     );
+    return { success: true };
   };
 
   const sendContractorNotification = (
@@ -798,6 +883,45 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
     return { success: true };
   };
 
+  // 9. Atomic Onboarding: Create First Organization via RPC public.create_first_organization
+  const createCompanyOnboarding = async (
+    name: string
+  ): Promise<{ success: boolean; error?: string; alreadyHasOrg?: boolean }> => {
+    const supabase = getSupabaseClient();
+    if (!isConfigured || !supabase || !user) {
+      return { success: false, error: 'Usuário não autenticado ou Supabase indisponível.' };
+    }
+
+    const result = await createFirstOrganization(supabase, name);
+
+    if (result.success) {
+      // Refresh organization & operational tables
+      await loadDataFromSupabase();
+      showToast('Empresa Criada', `O ambiente da empresa "${result.organizationName || name}" foi configurado com sucesso!`, 'success');
+      return { success: true };
+    }
+
+    if (result.alreadyHasOrg) {
+      // User already belongs to an organization in Postgres: load it immediately
+      const orgCheck = await fetchUserOrganization(supabase, user.id);
+      if (orgCheck.found && orgCheck.organizationId) {
+        await loadDataFromSupabase();
+        showToast('Empresa Localizada', `Seu vínculo com a organização "${orgCheck.organizationName}" foi carregado com sucesso.`, 'info');
+        return { success: true, alreadyHasOrg: true };
+      }
+      return {
+        success: false,
+        alreadyHasOrg: true,
+        error: 'Você já possui uma organização associada, mas houve uma falha ao localizá-la. Tente verificar novamente.',
+      };
+    }
+
+    return {
+      success: false,
+      error: result.error || 'Não foi possível criar a empresa.',
+    };
+  };
+
   return (
     <DocuCrewContext.Provider
       value={{
@@ -837,6 +961,7 @@ export const DocuCrewProvider: React.FC<{ children: ReactNode }> = ({ children }
         uploadDocument,
         downloadDocumentFile,
         updateOrgProfile,
+        createCompanyOnboarding,
       }}
     >
       {children}

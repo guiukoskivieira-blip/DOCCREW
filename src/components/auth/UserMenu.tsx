@@ -59,6 +59,18 @@ export const UserMenu: React.FC = () => {
     }
   };
 
+  if (!currentUser) {
+    return (
+      <button
+        onClick={openAuthModal}
+        className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#061E2E] text-white hover:bg-[#0B2A3F] font-bold text-xs shadow-xs transition-colors"
+      >
+        <KeyRound className="w-3.5 h-3.5 text-[#FFC400]" />
+        <span>Fazer Login</span>
+      </button>
+    );
+  }
+
   return (
     <div className="relative" ref={menuRef}>
       <button

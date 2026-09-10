@@ -794,3 +794,85 @@ export const insertWorker = createWorker;
 export const insertSite = createSite;
 export const insertDocumentType = createDocumentType;
 
+export interface CreateFirstOrganizationResult {
+  success: boolean;
+  organizationId?: string;
+  organizationName?: string;
+  organizationSlug?: string;
+  memberRole?: string;
+  alreadyHasOrg?: boolean;
+  error?: string;
+}
+
+/**
+ * Executes the atomic RPC public.create_first_organization(p_name text).
+ * Does NOT perform direct INSERTs on organizations or organization_members.
+ * Strictly relies on the remote Postgres function with SECURITY INVOKER.
+ */
+export async function createFirstOrganization(
+  supabase: SupabaseClient,
+  rawName: string
+): Promise<CreateFirstOrganizationResult> {
+  const p_name = (rawName || '').trim();
+
+  // Frontend validation: 2 to 120 characters, non-empty, not whitespace-only
+  if (!p_name || p_name.length < 2 || p_name.length > 120) {
+    return {
+      success: false,
+      error: 'O nome da empresa deve conter entre 2 e 120 caracteres.',
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('create_first_organization', {
+      p_name,
+    });
+
+    if (error) {
+      const errMsg = error.message || '';
+
+      if (errMsg.includes('USER_ALREADY_HAS_ORGANIZATION')) {
+        return {
+          success: false,
+          alreadyHasOrg: true,
+          error: 'USER_ALREADY_HAS_ORGANIZATION',
+        };
+      }
+
+      if (errMsg.includes('AUTH_REQUIRED')) {
+        return {
+          success: false,
+          error: 'Autenticação necessária. Faça login para continuar.',
+        };
+      }
+
+      if (errMsg.includes('INVALID_ORGANIZATION_NAME')) {
+        return {
+          success: false,
+          error: 'O nome da empresa informado é inválido. Informe entre 2 e 120 caracteres válidos.',
+        };
+      }
+
+      return {
+        success: false,
+        error: errMsg || 'Falha ao criar organização no servidor.',
+      };
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return {
+      success: true,
+      organizationId: row?.organization_id,
+      organizationName: row?.organization_name || p_name,
+      organizationSlug: row?.organization_slug,
+      memberRole: row?.member_role || 'owner',
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Falha inesperada ao contatar o servidor.';
+    return {
+      success: false,
+      error: msg,
+    };
+  }
+}
+

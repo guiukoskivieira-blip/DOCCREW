@@ -12,6 +12,7 @@ import { DocumentosPage } from './pages/DocumentosPage';
 import { AnalisesPage } from './pages/AnalisesPage';
 import { AlertasPage } from './pages/AlertasPage';
 import { ConfiguracoesPage } from './pages/ConfiguracoesPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
       <DocuCrewProvider>
         <BrowserRouter>
           <Routes>
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/" element={<Layout />}>
               <Route index element={<DashboardPage />} />
               <Route path="terceirizadas" element={<TerceirizadasPage />} />
